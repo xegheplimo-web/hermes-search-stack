@@ -1,0 +1,300 @@
+{
+  "generated": "2026-10-06T03:00:45",
+  "run_command_bash": "PYTHONPATH=\"C:/Users/atton/AppData/Local/hermes/hermes-agent\" HERMES_HOME=\"C:/Users/atton/AppData/Local/hermes\" \"C:/Users/atton/AppData/Local/hermes/installs/6e6d900815cdde0a/environments/6443484ef2bf47a8a070762d2318e3b2/venv/Scripts/python.exe\" verify_web_stack.py",
+  "run_command_powershell": "$env:PYTHONPATH=\"C:/Users/atton/AppData/Local/hermes/hermes-agent\"; $env:HERMES_HOME=\"C:/Users/atton/AppData/Local/hermes\"; & \"C:/Users/atton/AppData/Local/hermes/installs/6e6d900815cdde0a/environments/6443484ef2bf47a8a070762d2318e3b2/venv/Scripts/python.exe\" verify_web_stack.py",
+  "live_calls": 9,
+  "cases": [
+    {
+      "id": "S1",
+      "kind": "search",
+      "input": "capital of Australia population 2026",
+      "pass": true,
+      "latency_s": 1.86,
+      "n_results": 5,
+      "backends": [
+        "managed",
+        "perplexity"
+      ],
+      "error": null,
+      "notes": "EN factual",
+      "evidence": [
+        "INFO hermes_cli.plugins: Plugin 'browser-browser-use' registered browser provider: browser-use",
+        "INFO hermes_cli.plugins: Plugin 'browser-browserbase' registered browser provider: browserbase",
+        "INFO hermes_cli.plugins: Plugin 'browser-firecrawl' registered browser provider: firecrawl",
+        "INFO hermes_cli.plugins: Plugin 'deepinfra' registered image_gen provider: deepinfra",
+        "INFO hermes_cli.plugins: Plugin 'fal' registered image_gen provider: fal",
+        "INFO hermes_cli.plugins: Plugin 'krea' registered image_gen provider: krea",
+        "INFO hermes_cli.plugins: Plugin 'meta-ai-image-gen' registered image_gen provider: meta-ai",
+        "INFO hermes_cli.plugins: Plugin 'openai' registered image_gen provider: openai",
+        "INFO hermes_cli.plugins: Plugin 'openai-codex' registered image_gen provider: openai-codex",
+        "INFO hermes_cli.plugins: Plugin 'openrouter' registered image_gen provider: openrouter",
+        "INFO hermes_cli.plugins: Plugin 'openrouter' registered image_gen provider: nous",
+        "INFO hermes_cli.plugins: Plugin 'xai' registered image_gen provider: xai",
+        "INFO hermes_cli.plugins: Plugin 'deepinfra' registered video_gen provider: deepinfra",
+        "INFO hermes_cli.plugins: Plugin 'fal' registered video_gen provider: fal",
+        "INFO hermes_cli.plugins: Plugin 'openrouter' registered video_gen provider: openrouter",
+        "INFO hermes_cli.plugins: Plugin 'xai' registered video_gen provider: xai",
+        "INFO hermes_cli.plugins: Plugin 'web-brave-free' registered web provider: brave-free",
+        "INFO hermes_cli.plugins: Plugin 'web-ddgs' registered web provider: ddgs",
+        "INFO hermes_cli.plugins: Plugin 'web-exa' registered web provider: exa",
+        "INFO hermes_cli.plugins: Plugin 'web-firecrawl' registered web provider: firecrawl",
+        "INFO hermes_cli.plugins: Plugin 'web-keenable' registered web provider: keenable",
+        "INFO hermes_cli.plugins: Plugin 'web-openai-native' registered web provider: openai-native",
+        "INFO hermes_cli.plugins: Plugin 'web-parallel' registered web provider: parallel",
+        "INFO hermes_cli.plugins: Plugin 'web-perplexity' registered web provider: perplexity",
+        "INFO hermes_cli.plugins: Plugin 'web-searxng' registered web provider: searxng",
+        "INFO hermes_cli.plugins: Plugin 'web-tavily' registered web provider: tavily",
+        "INFO hermes_cli.plugins: Plugin 'web-xai' registered web provider: xai",
+        "INFO hermes_cli.plugins: Plugin discovery complete: 57 found, 54 enabled",
+        "INFO tools.web_tools: Web search via perplexity: 'capital of Australia population 2026' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'capital of Australia population 2026' (limit=10, managed)",
+        "INFO plugins.web.perplexity.provider: Perplexity search request to https://perplexity-gateway.nousresearch.com/search",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S2",
+      "kind": "search",
+      "input": "AI news October 2026",
+      "pass": true,
+      "latency_s": 1.17,
+      "n_results": 5,
+      "backends": [
+        "managed",
+        "perplexity"
+      ],
+      "error": null,
+      "notes": "EN recency; recency_2026=True",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'AI news October 2026' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'AI news October 2026' (limit=10, managed)",
+        "INFO plugins.web.perplexity.provider: Perplexity search request to https://perplexity-gateway.nousresearch.com/search",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S3",
+      "kind": "search",
+      "input": "giá vàng SJC hôm nay",
+      "pass": true,
+      "latency_s": 1.22,
+      "n_results": 5,
+      "backends": [
+        "managed",
+        "perplexity"
+      ],
+      "error": null,
+      "notes": "VI",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'giá vàng SJC hôm nay' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'giá vàng SJC hôm nay' (limit=10, managed)",
+        "INFO plugins.web.perplexity.provider: Perplexity search request to https://perplexity-gateway.nousresearch.com/search",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S4",
+      "kind": "search",
+      "input": "Nous Research Hermes Agent web search",
+      "pass": true,
+      "latency_s": 1.2,
+      "n_results": 5,
+      "backends": [
+        "managed",
+        "perplexity"
+      ],
+      "error": null,
+      "notes": "EN project",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'Nous Research Hermes Agent web search' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'Nous Research Hermes Agent web search' (limit=10, managed)",
+        "INFO plugins.web.perplexity.provider: Perplexity search request to https://perplexity-gateway.nousresearch.com/search",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S5",
+      "kind": "search",
+      "input": "DeepSeek V4 release",
+      "pass": true,
+      "latency_s": 1.05,
+      "n_results": 5,
+      "backends": [
+        "managed",
+        "perplexity"
+      ],
+      "error": null,
+      "notes": "EN product",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'DeepSeek V4 release' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'DeepSeek V4 release' (limit=10, managed)",
+        "INFO plugins.web.perplexity.provider: Perplexity search request to https://perplexity-gateway.nousresearch.com/search",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "E1",
+      "kind": "extract",
+      "input": "https://webgia.com/gia-vang/",
+      "pass": true,
+      "latency_s": 7.65,
+      "chars": 2294,
+      "backends": [
+        "exa",
+        "keyless"
+      ],
+      "error": null,
+      "notes": "article from S3 (VI gold); source S3; url=https://webgia.com/gia-vang/",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via exa: 1 URL(s)",
+        "INFO plugins.web.exa.provider: Exa keyless extract: 1 URL(s)",
+        "INFO tools.web_tools: Extracted content from 1 pages",
+        "INFO tools.web_tools: https://webgia.com/gia-vang/ (2294 chars, whole)"
+      ],
+      "attempts": [
+        {
+          "url": "https://webgia.com/gia-vang/",
+          "latency_s": 7.65,
+          "chars": 2294,
+          "backends": [
+            "exa",
+            "keyless"
+          ],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Extracting content from 1 URL(s)",
+            "INFO tools.web_tools: Web extract via exa: 1 URL(s)",
+            "INFO plugins.web.exa.provider: Exa keyless extract: 1 URL(s)",
+            "INFO tools.web_tools: Extracted content from 1 pages",
+            "INFO tools.web_tools: https://webgia.com/gia-vang/ (2294 chars, whole)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "kind": "extract",
+      "input": "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+      "pass": true,
+      "latency_s": 0.08,
+      "chars": 2782,
+      "backends": [],
+      "error": null,
+      "notes": "docs page; fixed URL; url=https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_result_cache: web_extract cache hit: https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+        "INFO tools.web_tools: Extracted content from 1 pages",
+        "INFO tools.web_tools: https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search (2782 chars, whole)"
+      ],
+      "attempts": [
+        {
+          "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+          "latency_s": 0.08,
+          "chars": 2782,
+          "backends": [],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Extracting content from 1 URL(s)",
+            "INFO tools.web_result_cache: web_extract cache hit: https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+            "INFO tools.web_tools: Extracted content from 1 pages",
+            "INFO tools.web_tools: https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search (2782 chars, whole)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "kind": "extract",
+      "input": "https://github.com/NousResearch/hermes-agent",
+      "pass": true,
+      "latency_s": 1.54,
+      "chars": 15360,
+      "backends": [
+        "keyless",
+        "parallel"
+      ],
+      "error": null,
+      "notes": "github README; fixed URL; url=https://github.com/NousResearch/hermes-agent",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via parallel: 1 URL(s)",
+        "INFO plugins.web.parallel.provider: Parallel keyless extract: 1 URL(s)",
+        "INFO plugins.web.keyless_mcp: keyless parallel extract unavailable; failing over to keenable",
+        "INFO tools.web_tools: Extracted content from 1 pages",
+        "INFO tools.web_tools: https://github.com/NousResearch/hermes-agent (truncated 16080 -> 15360 chars)"
+      ],
+      "attempts": [
+        {
+          "url": "https://github.com/NousResearch/hermes-agent",
+          "latency_s": 1.54,
+          "chars": 15360,
+          "backends": [
+            "keyless",
+            "parallel"
+          ],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Extracting content from 1 URL(s)",
+            "INFO tools.web_tools: Web extract via parallel: 1 URL(s)",
+            "INFO plugins.web.parallel.provider: Parallel keyless extract: 1 URL(s)",
+            "INFO plugins.web.keyless_mcp: keyless parallel extract unavailable; failing over to keenable",
+            "INFO tools.web_tools: Extracted content from 1 pages",
+            "INFO tools.web_tools: https://github.com/NousResearch/hermes-agent (truncated 16080 -> 15360 chars)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E4",
+      "kind": "extract",
+      "input": "https://www.tlt.com/insights-and-events/insight/tlts-ai-brief-october-2026",
+      "pass": true,
+      "latency_s": 0.85,
+      "chars": 14438,
+      "backends": [
+        "keenable",
+        "keyless"
+      ],
+      "error": null,
+      "notes": "article from S2 (AI news); source S2; url=https://www.tlt.com/insights-and-events/insight/tlts-ai-brief-october-2026",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via keenable: 1 URL(s)",
+        "INFO plugins.web.keenable.provider: Keenable keyless extract: 1 URL(s)",
+        "INFO tools.web_tools: Extracted content from 1 pages",
+        "INFO tools.web_tools: https://www.tlt.com/insights-and-events/insight/tlts-ai-brief-october-2026 (truncated 17692 -> 14438 chars)"
+      ],
+      "attempts": [
+        {
+          "url": "https://www.tlt.com/insights-and-events/insight/tlts-ai-brief-october-2026",
+          "latency_s": 0.85,
+          "chars": 14438,
+          "backends": [
+            "keenable",
+            "keyless"
+          ],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Extracting content from 1 URL(s)",
+            "INFO tools.web_tools: Web extract via keenable: 1 URL(s)",
+            "INFO plugins.web.keenable.provider: Keenable keyless extract: 1 URL(s)",
+            "INFO tools.web_tools: Extracted content from 1 pages",
+            "INFO tools.web_tools: https://www.tlt.com/insights-and-events/insight/tlts-ai-brief-october-2026 (truncated 17692 -> 14438 chars)"
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "pass": 9,
+    "fail": 0,
+    "total": 9,
+    "elapsed_s": 31.71
+  }
+}

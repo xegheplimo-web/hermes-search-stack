@@ -1,0 +1,27 @@
+## modules.web.keyless_mcp
+keyless_enabled() -> True
+- keyless_enabled() -> 'bool'  # Delegates to the registry so the ``web.keyless_fallback`` (default on) chokepoint lives with backend resolution.
+- parallel_search_keyless(query: 'str', limit: 'int' = 5) -> 'Dict[str, Any]'  # 
+- parallel_extract_keyless(urls: 'List[str]') -> 'List[Dict[str, Any]]'  # 
+- exa_search_keyless(query: 'str', limit: 'int' = 5) -> 'Dict[str, Any]'  # 
+- exa_extract_keyless(urls: 'List[str]') -> 'List[Dict[str, Any]]'  # Called per-URL; the tool returns one combined text payload.
+- firecrawl_search_keyless(query: 'str', limit: 'int' = 5) -> 'Dict[str, Any]'  # 
+- firecrawl_extract_keyless(urls: 'List[str]') -> 'List[Dict[str, Any]]'  # 
+- keenable_search_keyless(query: 'str', limit: 'int' = 5) -> 'Dict[str, Any]'  # 
+- keenable_extract_keyless(urls: 'List[str]') -> 'List[Dict[str, Any]]'  # 
+- search_with_failover(name: 'str', query: 'str', limit: 'int' = 5) -> 'Dict[str, Any]'  # Rate limits and anonymous-endpoint auth/policy rejections advance to the next
+- extract_with_failover(name: 'str', urls: 'List[str]') -> 'List[Dict[str, Any]]'  # Advances to the next ring vendor only when EVERY url in a batch comes
+- mcp_call(url: 'str', tool: 'str', arguments: 'Dict[str, Any]', timeout: 'int' = 30) -> 'str'  # POST a JSON-RPC ``tools/call`` and return the text payload. Raises
+- use_keyless(name: 'str', api_key: 'str') -> 'bool'  # Single chokepoint for search + extract: ``free`` → keyless even with a key; ``paid`` → keyed even
+- provider_tier(name: 'str') -> 'str'  # ``web.provider_tier.<name>`` (``hermes tools`` Free/Paid rows): ``free``, ``paid``, or ``auto`` (anything else/unset).
+- _ring_order(name: 'str') -> 'List[str]'  # Vendor walk order: pinned → start at *name* (its ring position fixes the failover
+
+## plugins.web.ddgs.provider
+- class DDGSWebSearchProvider: __init__(self, /, *args, **kwargs)
+- searchsearch(self, query: 'str', limit: 'int' = 5) -> 'Dict[str, Any]'
+- is_availableis_available(self) -> 'bool'
+
+## live sanity calls (1 each)
+DDGS.search -> {"success": false, "error": "ddgs package is not installed — run `pip install ddgs`"}
+parallel_search_keyless -> {"success": true, "data": {"web": [{"url": "https://www.tomshardware.com/laptops/gaming-laptops/best-gaming-laptop-deals-discount", "title": "Best gaming laptop PC deals 2026 — epic discounts on Dell, Alienware, MSI, ROG, and others | Tom's Hardware", "description": "1. Laptops\n2. Gaming Laptops\nBest gaming laptop PC deals 2026 — epic discounts on Dell, Alienware, MSI, ROG, and others\nDeals\nBy
+extract_with_failover(parallel) -> [{"url": "https://example.com", "title": "", "content": "", "error": "Keyless Firecrawl extract failed: Client error '403 Forbidden' for url 'https://api.firecrawl.dev/v2/scrape'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403. Set FIRECRAWL_API_KEY (https://firecrawl.dev) for reliable service."}]

@@ -1,0 +1,5 @@
+# Dev/CI tooling — exact pins keep `ruff format --check` stable across CI runs.
+# Dependabot (.github/dependabot.yml) raises bump PRs.
+ruff==0.16.10
+pytest==9.1.1
+bandit==1.9.4

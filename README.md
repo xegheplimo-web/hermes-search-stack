@@ -1,0 +1,95 @@
+# hermes-search-stack
+
+Verification & maintenance toolkit for the Hermes Agent web search stack (managed Perplexity search via Nous Tool Gateway + keyless fallback ring).
+
+[![CI](https://github.com/xegheplimo-web/hermes-search-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/xegheplimo-web/hermes-search-stack/actions/workflows/ci.yml)
+[![Security](https://github.com/xegheplimo-web/hermes-search-stack/actions/workflows/security.yml/badge.svg)](https://github.com/xegheplimo-web/hermes-search-stack/actions/workflows/security.yml)
+
+## What this is
+
+This repo proves — with runnable scripts and committed evidence — that Hermes Agent's
+`web_search` + `web_extract` deliver Perplexity-grade quality:
+
+| Layer | Mechanism | Backend |
+|---|---|---|
+| `web_search` | Free managed Perplexity (`search_type=fast`) via Nous Tool Gateway identity — auto-detect, **never pinned in config** | `perplexity-gateway.nousresearch.com` |
+| `web_extract` | Keyless ring over free tiers (round-robin) | exa / parallel / keenable |
+| Fallback | `keyless_rescue` one-shot ring + managed-firecrawl fallback for search | verified via direct `_rescue_search()` call |
+| Cache | Web cache on, 20 min TTL | — |
+
+Key results (see `REPORT.md` for full evidence):
+
+- **T1 battery (`verify_web_stack.py`): 9/9** — 5 live searches (managed Perplexity,
+  1.2–2.0 s) + 4 extracts (keyless, 0.44–0.89 s, 3.1k–15.4k chars).
+- **T2 resilience (`test_keyless_fallback.py`): 6/6** in normal conditions — keyless
+  search (parallel + exa), extract failover, and rescue search returning 3 results.
+- **E2E:** fresh `hermes chat` sessions answered Vietnamese news, Node.js LTS, and
+  Nobel Physics 2026 queries with real dated sources and self-correction behavior.
+
+Details: `SPEC.md` (spec + change log), `REPORT.md` (orchestrator report + evidence).
+
+## Repo layout
+
+| Path | Contents |
+|---|---|
+| `verify_web_stack.py` | T1 live search/extract quality battery (needs local Hermes env) |
+| `test_keyless_fallback.py` | T2 keyless fallback + rescue proof (needs local Hermes env) |
+| `tests/` | Offline unit tests (run in CI) |
+| `references/` | API dumps / introspection helpers used during development |
+| `evidence/` | Committed battery outputs (JSON/MD/logs) |
+| `SPEC.md`, `REPORT.md` | Spec and verification report |
+| `.github/workflows/` | CI + security pipelines |
+
+## Running the live verification
+
+Requires a local Hermes install. First resolve the current runtime venv
+(the path changes when Hermes repairs/rebuilds environments):
+
+```bash
+cd hermes-search-stack
+hermes doctor 2>&1 | grep "Runtime venv"
+```
+
+Then run both batteries (~30–60 s):
+
+```bash
+export PYTHONPATH="<hermes-agent-src>" HERMES_HOME="<hermes-home>"
+VENV="<runtime-venv>/venv/Scripts/python.exe"
+"$VENV" verify_web_stack.py        # expect: PASS 9/9, exit 0
+"$VENV" test_keyless_fallback.py   # expect: PASS 6/6
+```
+
+Keep ≥1.5 s between live network calls; each script makes ≤30 calls total.
+Never modify `config.yaml`, `.env`, or `auth.json` under the Hermes home.
+
+## CI
+
+GitHub Actions runs on every push to `main` and every pull request:
+
+- **lint:** `ruff check .` + `ruff format --check .`
+- **test:** `pip install -r requirements-dev.txt` then `pytest -q` on Python
+  3.11 / 3.12 / 3.13, plus a `compileall` sanity check on the two live scripts.
+
+The live verification scripts need a local Hermes install, so CI is
+deliberately **offline-safe**: it lints, format-checks, compile-checks, and runs
+only the hermetic unit tests in `tests/`. **Bandit** (Python SAST) scans the
+sources on every push/PR and weekly; Dependabot updates GitHub Actions and pip
+dependencies weekly. (CodeQL is not available on private user-owned repos — it
+requires GitHub Advanced Security; re-add it if the repo ever goes public.)
+
+## Maintenance
+
+Full playbook: the Hermes skill **`hermes-web-search-stack`**.
+
+Hard rules:
+
+1. **Never pin `web.search_backend`** (not even to `perplexity`) — pinning breaks
+   the free managed route. Leave it empty (auto).
+2. **Do not install `ddgs`** on the Hermes host — it hijacks search autodetect and
+   breaks `web_extract` (search-only backend).
+3. **Firecrawl free tier stays pinned to `paid`** (`web.provider_tier.firecrawl`) —
+   its keyless endpoint returns 403, so it must stay out of the free ring.
+
+## License
+
+MIT — see `LICENSE`.

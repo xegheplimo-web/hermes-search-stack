@@ -1,0 +1,73 @@
+{
+  "generated": "2026-10-06T02:47:10",
+  "run_command": "PYTHONPATH=\"C:/Users/atton/AppData/Local/hermes/hermes-agent\" HERMES_HOME=\"C:/Users/atton/AppData/Local/hermes\" \"C:/Users/atton/AppData/Local/hermes/installs/6e6d900815cdde0a/environments/6443484ef2bf47a8a070762d2318e3b2/venv/Scripts/python.exe\" test_keyless_fallback.py",
+  "live_calls": 6,
+  "live_call_cap": 12,
+  "cases": [
+    {
+      "id": "K1",
+      "pass": true,
+      "fn_used": "plugins.web.ddgs.provider.DDGSWebSearchProvider.search",
+      "calls": 1,
+      "error": null,
+      "notes": "FINDING (documented-unavailability, NOT a failure): DDGS tier unavailable as documented; error=ddgs package is not installed — run `pip install ddgs`",
+      "evidence_excerpt": "{\"success\": false, \"error\": \"ddgs package is not installed — run `pip install ddgs`\"}"
+    },
+    {
+      "id": "K2-parallel",
+      "pass": true,
+      "fn_used": "plugins.web.keyless_mcp.parallel_search_keyless",
+      "calls": 1,
+      "error": null,
+      "notes": "n_results=3; first title=\"Best gaming laptop PC deals 2026 — epic discounts on Dell, Alienware, MSI, ROG, and others | Tom's Hardware\"; first url='https://www.tomshardware.com/laptops/gaming-laptops/best-gaming-laptop-deals-discount'",
+      "evidence_excerpt": "{\"url\": \"https://www.tomshardware.com/laptops/gaming-laptops/best-gaming-laptop-deals-discount\", \"title\": \"Best gaming laptop PC deals 2026 — epic discounts on Dell, Alienware, MSI, ROG, and others | ...[truncated]"
+    },
+    {
+      "id": "K2-exa",
+      "pass": true,
+      "fn_used": "plugins.web.keyless_mcp.exa_search_keyless",
+      "calls": 1,
+      "error": null,
+      "notes": "n_results=3; first title='The 15 Best Laptops of 2026 | Reviews by Wirecutter'; first url='https://www.nytimes.com/wirecutter/reviews/best-laptops/'",
+      "evidence_excerpt": "{\"url\": \"https://www.nytimes.com/wirecutter/reviews/best-laptops/\", \"title\": \"The 15 Best Laptops of 2026 | Reviews by Wirecutter\", \"description\": \"The 15 Best Laptops of 2026 | Reviews by Wirecutter ...[truncated]"
+    },
+    {
+      "id": "K3-example",
+      "pass": true,
+      "fn_used": "plugins.web.keyless_mcp.parallel_extract_keyless -> plugins.web.keyless_mcp.exa_extract_keyless -> plugins.web.keyless_mcp.keenable_extract_keyless -> plugins.web.keyless_mcp.firecrawl_extract_keyless",
+      "calls": 1,
+      "error": null,
+      "notes": "url=https://example.com; content_source=parallel; chars=952; tried=1/4",
+      "evidence_excerpt": "This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.\nهذا النطاق مُخصص للاستخدام في أمثلة التوثيق...[truncated]",
+      "vendor_outcomes": {
+        "parallel": "CONTENT chars=952"
+      }
+    },
+    {
+      "id": "K3-docs",
+      "pass": true,
+      "fn_used": "plugins.web.keyless_mcp.parallel_extract_keyless -> plugins.web.keyless_mcp.exa_extract_keyless -> plugins.web.keyless_mcp.keenable_extract_keyless -> plugins.web.keyless_mcp.firecrawl_extract_keyless",
+      "calls": 1,
+      "error": null,
+      "notes": "url=https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search; content_source=parallel; chars=2782; tried=1/4",
+      "evidence_excerpt": "# Web Search & Extract\nPython dependency commands on this page use a [PM-prepared source checkout](https://hermes-agent.nousresearch.com/docs/reference/package-management) .\nAfter a dependency change,...[truncated]",
+      "vendor_outcomes": {
+        "parallel": "CONTENT chars=2782"
+      }
+    },
+    {
+      "id": "K4",
+      "pass": true,
+      "fn_used": "tools.web_tools._rescue_search",
+      "calls": 1,
+      "error": null,
+      "notes": "signature=(provider_name: str, original_error: str, query: str, limit: int) -> dict; CALLED ok: success=true, results=3",
+      "evidence_excerpt": "{\"success\": true, \"data\": {\"web\": [{\"url\": \"https://nld.com.vn\", \"title\": \"Tin tức Người Lao Động (NLD) - Tin tức mới nhất 24h | Báo Tuổi Trẻ\", \"description\": \"Dải hội tụ nhiệt đới dịch dần lên Trung ...[truncated]"
+    }
+  ],
+  "totals": {
+    "pass": 6,
+    "fail": 0,
+    "total": 6
+  }
+}
