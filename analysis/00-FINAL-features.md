@@ -141,19 +141,19 @@
 | A3 architecture | Devin | ❌ v1 bị permission chặn → ✅ v2 (dangerous mode) 31KB | Spot-check 4 claim code-path ✓ (`_PARALLEL_SAFE_TOOLS`, `_KEYLESS_RING`, `blocked-page-recovery`, `over_cited` L483) |
 | A4 authenticity | Cline | ✅ 22KB, verdict + 32 techniques | **Tự chạy lại: SHA-256 ✓ khớp tuyệt đối; git log ✓ đúng từng commit; 23/4/2025=Thứ Tư ✓** |
 | A5 setup plan | OpenCode | ❌ v1 permission wall → ✅ v2 (mở quyền opencode.json) 19.8KB | Đọc toàn bộ; rules R1–R22 quote-checked |
-| B1 build | Cline ×2 crash → Devin | 🚧 | (cập nhật sau) |
+| B1 build | Cline ×2 crash → Devin | ✅ `deep_research.py` + `verify_deep_research.py` + tests | Orchestrator re-run: ruff clean, pytest 51/51, smokes OK + acceptance run PASS (§6) |
 
 **Repo hygiene đã làm:** `.serena/` thêm vào `.gitignore`; `opencode.json` mở quyền đọc `skills/**` + `F:/CL4R1T4S/**`; SKILL.md fix path Windows + 2 fence hỏng.
 **Hard rules (EVIDENCE §7) toàn cục:** không pin backend ✓ · không cài ddgs ✓ · firecrawl giữ `paid` ✓ · nhịp ≥1.5s trong mọi thiết kế ✓.
 
 ---
 
-## 9. Việc tiếp theo cần Sếp quyết
+## 9. Quyết định của Sếp — đã thực hiện (2026-10-06, "làm đi")
 
-1. **Commit + push** repo `hermes-search-stack` (analysis/ + skill + scripts + tests)? Cần token GitHub mới (token cũ đã khuyến nghị rotate).
-2. **`extract_char_limit` 15000→8000** — chấp nhận giảm chi tiết extract để nhanh hơn? (đề xuất: giữ 15k, để F2-c prefetch làm trước).
-3. **Đổi primary model** sang `opencode-go/deepseek-flash` (hết 11 fallback hop/session)?
-4. Chạy thử **skill deep-research** cho một chủ đề thật Sếp quan tâm (em demo ngay khi Sếp chọn chủ đề, hoặc em tự chọn).
+1. **Commit + push** — ✅ ĐÃ PUSH: commit `13288d7` (14 file: analysis/ + skill + scripts + tests) lên `xegheplimo-web/hermes-search-stack`; remote verified `e48b304..13288d7 main`. Không cần token mới (credential cache) — vẫn nên rotate token cũ.
+2. **`extract_char_limit`** — ✅ GIỮ 15000 (theo đề xuất; nếu sau này thấy session chậm, đổi 8k = 1 lệnh).
+3. **Primary model** — ✅ ĐÃ LÀ `opencode-go/deepseek-flash` (config `model.default` + desktop app override; **0 fallback event từ 03:01**). Entry chain trùng backend vừa fail tự động bị skip (code: `_should_skip_fallback_candidate`) → không loop. Memory đã cập nhật.
+4. **Deep-research run #2 (chủ đề thật)** — ✅ HOÀN TẤT & VERIFIED: "So sánh AI coding agent CLI 2026 (Claude Code, Codex CLI, Cline, OpenCode, Devin CLI)" → `analysis/deep-research-coding-agents.md` — 5.834 từ, 12 section `##`, 13 `###`, **118/118 câu có citation (100%)**, **29/29 nguồn được trích**, strict pass; runtime **9m42s** (đạt chuẩn <15 phút); 1 nguồn bị rate-limit được xử lý đúng quy trình (dùng snippet từ search + ghi sổ minh bạch, không gọi lại).
 
 ---
 
