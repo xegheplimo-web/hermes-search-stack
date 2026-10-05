@@ -9,3 +9,4 @@ agent_logs/
 *.egg-info/
 dist/
 build/
+.serena/
