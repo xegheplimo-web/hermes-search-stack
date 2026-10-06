@@ -4,5 +4,6 @@ ruff==0.16.10
 pytest==9.1.1
 bandit==1.9.4
 # Optional vector tiers for searchstore.vectors — top tier activates when present; tests cover it + the python floor.
-numpy==2.5.3
+# numpy 2.4.6 = newest line supporting Python 3.11 (CI matrix) through 3.14 (local dev venv).
+numpy==2.4.6
 sqlite-vec==0.1.9
