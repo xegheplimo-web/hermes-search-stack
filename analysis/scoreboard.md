@@ -41,4 +41,4 @@ _latest run unchanged since previous scoreboard (r10_corpus_control_20261006_191
 | `keyless_20261006_214911.json` | 2026-10-06T21:49:11 | 6 | 0 | 6 | 6 |
 
 ---
-generated_at: 2026-10-06T21:27:10+00:00
+generated_at: 2026-10-06T22:33:21+00:00
