@@ -100,7 +100,7 @@ Gateway :8787 = old code for baseline; restarted with wave code for post-fix run
 
 ## Keep / Revert
 - R10-A: KEEP · R10-C(+C2): KEEP · goong fix: KEEP · R10-B(+B2): KEEP.
-- Wave commits: `9976258` (docs+splits) · `aab7606` (goong fix) · `5e69182` (A) · `4c5ceab` (C) · `e957a51` (B). Push + CI: [PENDING].
+- Wave commits: `9976258` (docs+splits) · `aab7606` (goong fix) · `5e69182` (A) · `4c5ceab` (C) · `e957a51` (B) · `fe0a232` (report). **Push + CI: ✅** — CI (lint + py3.11/3.12/3.13) & Security xanh trên `fe0a232` (runs 37517618483 / 37517618379).
 
 ## Environment state at wave close
 - `:8795` — wave code (A+B), production DBs — the instance used for the AFTER run; keep as the new-code instance.
