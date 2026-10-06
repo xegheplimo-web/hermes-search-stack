@@ -38,4 +38,4 @@ jobs:
           cache: pip
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q verify_web_stack.py test_keyless_fallback.py
-      - run: python -m pytest -q
+      - run: python -m pytest -q -o addopts=""
