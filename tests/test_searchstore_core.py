@@ -26,8 +26,19 @@ def store(tmp_path):
     s.close()
 
 
+_COUNT_SQL = {
+    "documents": "SELECT COUNT(*) FROM documents",
+    "searches": "SELECT COUNT(*) FROM searches",
+    "search_results": "SELECT COUNT(*) FROM search_results",
+    "reports": "SELECT COUNT(*) FROM reports",
+    "report_sources": "SELECT COUNT(*) FROM report_sources",
+    "events": "SELECT COUNT(*) FROM events",
+    "embeddings": "SELECT COUNT(*) FROM embeddings",
+}
+
+
 def _count(conn, table):
-    return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    return conn.execute(_COUNT_SQL[table]).fetchone()[0]
 
 
 def _event_kinds(conn):

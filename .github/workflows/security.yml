@@ -21,4 +21,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install bandit
-      - run: bandit -r verify_web_stack.py test_keyless_fallback.py tests -ll
+      - run: bandit -r verify_web_stack.py test_keyless_fallback.py searchstore tests -ll

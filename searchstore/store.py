@@ -68,6 +68,26 @@ _EXPORT_TABLES = frozenset({"documents", "searches", "search_results", "reports"
 
 _STATS_TABLES = ("documents", "searches", "search_results", "reports", "report_sources", "events", "embeddings")
 
+# Literal SQL maps — table names never interpolate into SQL strings (bandit B608 clean).
+_STATS_COUNT_SQL = {
+    "documents": "SELECT COUNT(*) FROM documents",
+    "searches": "SELECT COUNT(*) FROM searches",
+    "search_results": "SELECT COUNT(*) FROM search_results",
+    "reports": "SELECT COUNT(*) FROM reports",
+    "report_sources": "SELECT COUNT(*) FROM report_sources",
+    "events": "SELECT COUNT(*) FROM events",
+    "embeddings": "SELECT COUNT(*) FROM embeddings",
+}
+
+_EXPORT_SELECT_SQL = {
+    "documents": "SELECT * FROM documents ORDER BY id",
+    "searches": "SELECT * FROM searches ORDER BY id",
+    "search_results": "SELECT * FROM search_results ORDER BY id",
+    "reports": "SELECT * FROM reports ORDER BY id",
+    "report_sources": "SELECT * FROM report_sources ORDER BY id",
+    "events": "SELECT * FROM events ORDER BY id",
+}
+
 
 def _load_vectors() -> ModuleType:
     try:
@@ -288,7 +308,7 @@ class SearchStore:
 
     def stats(self) -> dict:
         c = self._conn
-        out = {t: c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in _STATS_TABLES}
+        out = {t: c.execute(_STATS_COUNT_SQL[t]).fetchone()[0] for t in _STATS_TABLES}
         try:
             tier = _load_vectors().tier_available()
         except SearchStoreError:
@@ -317,7 +337,7 @@ class SearchStore:
             raise SearchStoreError(f"cannot export {table!r}; allowed tables: {sorted(_EXPORT_TABLES)}")
         if format == "jsonl":
             Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-            rows = self._conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+            rows = self._conn.execute(_EXPORT_SELECT_SQL[table]).fetchall()
             with open(out_path, "w", encoding="utf-8") as f:
                 for r in rows:
                     f.write(json.dumps(dict(r), ensure_ascii=False) + "\n")
