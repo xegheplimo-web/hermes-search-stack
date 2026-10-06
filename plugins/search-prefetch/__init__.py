@@ -102,6 +102,7 @@ def register(ctx: Any) -> None:
 
 # ─── Hook ──────────────────────────────────────────────────────────────────────
 
+
 def _on_post_tool_call(tool_name: str = "", result: Any = None, **_ignored: Any) -> None:
     """``post_tool_call`` observer: prefetch the top search-result URLs. Never raises.
 
@@ -147,6 +148,7 @@ def _spawn(urls: list[str]) -> None:
 
 
 # ─── Worker ────────────────────────────────────────────────────────────────────
+
 
 def _prefetch_worker(urls: list[str]) -> None:
     """Resolve the next keyless extract vendor, then fetch + store up to two URLs sequentially."""
@@ -198,6 +200,7 @@ def _prefetch_one(vendor: str, url: str) -> None:
 
 # ─── Result parsing / URL extraction ───────────────────────────────────────────
 
+
 def _parse_result(result: Any) -> Any:
     """Best-effort parse of the tool result (``web_search_tool`` returns a JSON string)."""
     if isinstance(result, dict):
@@ -237,6 +240,7 @@ def _extract_urls(data: dict) -> list[str]:
 
 
 # ─── Gates ─────────────────────────────────────────────────────────────────────
+
 
 def _enabled() -> bool:
     """Kill-switch (env) OR config gate. Default enabled."""
@@ -436,6 +440,7 @@ def _is_cache_warm(url: str, provider_name: str) -> bool:
 
 # ─── Fetch / store ─────────────────────────────────────────────────────────────
 
+
 def _fetch_one(vendor: str, url: str) -> dict | None:
     """Fetch one URL via the keyless ring's own extractor for *vendor* (no cursor interaction).
 
@@ -474,6 +479,7 @@ def _cache_put(url: str, content: str, title: str, provider_name: str) -> None:
 
 # ─── Single-flight ─────────────────────────────────────────────────────────────
 
+
 def _claim_inflight(url: str, provider_name: str) -> bool:
     """Atomically claim ``(url, provider)``; False when another prefetch already owns it."""
     key = f"{url}\n{provider_name}"
@@ -490,6 +496,7 @@ def _release_inflight(url: str, provider_name: str) -> None:
 
 
 # ─── Logging ───────────────────────────────────────────────────────────────────
+
 
 def _log(url: str, provider: str, status: str) -> None:
     """Append ``ISO_TS | url | provider | STORED|SKIP:<reason>|ERR:<msg>``. Best-effort."""
@@ -526,4 +533,3 @@ def _hermes_home() -> Path:
         if env:
             return Path(env)
         return Path.home() / ".hermes"
-

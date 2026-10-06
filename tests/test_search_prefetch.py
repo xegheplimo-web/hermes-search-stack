@@ -32,8 +32,9 @@ def _search_result(urls):
     return json.dumps({"success": True, "data": {"web": [{"url": u} for u in urls]}})
 
 
-def _install_fake_keyless(monkeypatch, *, extract=None, ring=("exa", "parallel", "firecrawl", "keenable"),
-                          cursor=0, tiers=None):
+def _install_fake_keyless(
+    monkeypatch, *, extract=None, ring=("exa", "parallel", "firecrawl", "keenable"), cursor=0, tiers=None
+):
     """Inject a fake ``plugins.web.keyless_mcp`` with a recording extractor table.
 
     Returns ``(fake_module, calls)`` where ``calls`` records each extractor invocation as the
@@ -107,6 +108,7 @@ def _log_lines(monkeypatch, tmp_path):
 
 # ─── register ──────────────────────────────────────────────────────────────────
 
+
 def test_register_hooks_post_tool_call(plugin):
     class FakeCtx:
         def __init__(self):
@@ -122,6 +124,7 @@ def test_register_hooks_post_tool_call(plugin):
 
 
 # ─── URL extraction ────────────────────────────────────────────────────────────
+
 
 def test_extract_urls_order_cap_and_dedupe(plugin):
     data = {"data": {"web": [{"url": "https://a/1"}, {"url": "https://b/2"}, {"url": "https://c/3"}]}}
@@ -144,6 +147,7 @@ def test_extract_urls_non_list_web(plugin):
 
 
 # ─── Hook dispatch + gates ─────────────────────────────────────────────────────
+
 
 def test_hook_ignores_non_web_search(plugin, monkeypatch):
     spawned = []
@@ -260,8 +264,8 @@ def test_hook_fail_open_when_enabled_raises(plugin, monkeypatch):
     plugin._on_post_tool_call(tool_name="web_search", result=_search_result(["https://a/1"]))
 
 
-
 # ─── Worker gates ──────────────────────────────────────────────────────────────
+
 
 def test_worker_provider_not_keyless(plugin, monkeypatch, tmp_path):
     log = _log_lines(monkeypatch, tmp_path)
@@ -307,6 +311,7 @@ def test_worker_in_flight_single_flight(plugin, monkeypatch, tmp_path):
 
 # ─── Worker store + cache-key parity ───────────────────────────────────────────
 
+
 def test_worker_stores_with_exact_cache_put_args(plugin, monkeypatch, tmp_path):
     log = _log_lines(monkeypatch, tmp_path)
     puts, gets = _install_fake_cache(monkeypatch, warm=False)
@@ -318,10 +323,15 @@ def test_worker_stores_with_exact_cache_put_args(plugin, monkeypatch, tmp_path):
     plugin._prefetch_worker(["https://a.example/1"])
 
     # Cache-key parity: exactly what tools/web_tools_extract.py writes.
-    assert puts == [{
-        "url": "https://a.example/1", "content": "body", "title": "T",
-        "format": "markdown", "provider": "exa",
-    }]
+    assert puts == [
+        {
+            "url": "https://a.example/1",
+            "content": "body",
+            "title": "T",
+            "format": "markdown",
+            "provider": "exa",
+        }
+    ]
     assert gets == [{"url": "https://a.example/1", "format": "markdown", "provider": "exa"}]
     assert calls == [["https://a.example/1"]]
     line = log.read_text(encoding="utf-8").strip()
@@ -347,6 +357,7 @@ def test_worker_fail_open_on_provider_exception(plugin, monkeypatch, tmp_path):
     log = _log_lines(monkeypatch, tmp_path)
     _install_fake_cache(monkeypatch, warm=False)
     monkeypatch.setattr(plugin.time, "sleep", lambda seconds: None)
+
     def raising(urls):
         raise RuntimeError("net")
 
@@ -368,8 +379,8 @@ def test_worker_fail_open_when_resolver_raises(plugin, monkeypatch, tmp_path):
     assert "ERR:" in log.read_text(encoding="utf-8")
 
 
-
 # ─── Pacing ────────────────────────────────────────────────────────────────────
+
 
 def test_pacing_sleeps_at_least_1_5s_per_fetch(plugin, monkeypatch, tmp_path):
     _log_lines(monkeypatch, tmp_path)
@@ -399,6 +410,7 @@ def test_no_pacing_when_all_urls_skipped(plugin, monkeypatch, tmp_path):
 
 
 # ─── Next-extract-vendor selection (ring peek + config/selection gates) ────────
+
 
 def test_peek_ring_vendor_follows_cursor(plugin, monkeypatch):
     _install_fake_keyless(monkeypatch, cursor=0)
@@ -451,6 +463,7 @@ def test_next_extract_vendor_stored_selection_skips(plugin, monkeypatch):
 
 # ─── Safety helper + log format ────────────────────────────────────────────────
 
+
 def test_conservative_host_ok(plugin):
     assert plugin._conservative_host_ok("example.com") is True
     assert plugin._conservative_host_ok("localhost") is False
@@ -477,4 +490,3 @@ def test_log_collapses_newlines(plugin, monkeypatch, tmp_path):
     log = _log_lines(monkeypatch, tmp_path)
     plugin._log("https://a/1", "exa", "ERR:line1\nline2")
     assert log.read_text(encoding="utf-8").count("\n") == 1
-

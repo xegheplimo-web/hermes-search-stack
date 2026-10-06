@@ -41,10 +41,22 @@ def test_clean_draft_passes_with_full_schema(capsys):
     assert code == 0
     assert rep["schema"] == "fact_check.v1"
     assert set(rep) == {
-        "schema", "draft", "ledger", "stats", "flags", "claims", "trust", "judge", "summary",
+        "schema",
+        "draft",
+        "ledger",
+        "stats",
+        "flags",
+        "claims",
+        "trust",
+        "judge",
+        "summary",
     }
     assert rep["stats"] == {
-        "sentences": 2, "cited_sentences": 2, "citations": 2, "unique_ids": 2, "coverage": 1.0,
+        "sentences": 2,
+        "cited_sentences": 2,
+        "citations": 2,
+        "unique_ids": 2,
+        "coverage": 1.0,
     }
     assert rep["flags"] == []
     assert rep["summary"] == {"pass": True, "flags_n": 0, "unsupported_n": 0, "conflicting_n": 0}
@@ -121,20 +133,33 @@ def test_missing_id_flag_fails_the_run(capsys):
 def test_no_quote_snippet_only_and_low_trust_flags(capsys):
     _, rep, _ = run_json(bad_args(), capsys)
     flags = {(f["type"], f["id"]) for f in rep["flags"]}
-    assert ("no_quote", 1) in flags      # entry carries no quotes
+    assert ("no_quote", 1) in flags  # entry carries no quotes
     assert ("snippet_only", 1) in flags  # and no full-extract evidence at all
-    assert ("low_trust", 1) in flags     # unknown host + demotions push score below 0.5
-    assert ("low_trust", 2) in flags     # unknown host
+    assert ("low_trust", 1) in flags  # unknown host + demotions push score below 0.5
+    assert ("low_trust", 2) in flags  # unknown host
     assert ("snippet_only", 2) not in flags  # quotes prove a fetched page
     assert ("no_quote", 2) not in flags
 
 
 def test_extract_marker_suppresses_snippet_only(tmp_path, capsys):
     ledger = tmp_path / "ledger.json"
-    ledger.write_text(json.dumps({"version": 1, "sources": [
-        {"id": 1, "url": "https://example.org/page", "title": "t", "accessed": "2026-10-06",
-         "extracted": True},
-    ]}), encoding="utf-8")
+    ledger.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "id": 1,
+                        "url": "https://example.org/page",
+                        "title": "t",
+                        "accessed": "2026-10-06",
+                        "extracted": True,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     draft = tmp_path / "draft.md"
     draft.write_text("A claim resting on the extracted page appears here.[1]\n", encoding="utf-8")
     _, rep, _ = run_json(["--draft", draft, "--ledger", ledger], capsys)
@@ -150,18 +175,52 @@ def test_extract_marker_suppresses_snippet_only(tmp_path, capsys):
 
 def test_trust_tiers_scores_and_demotions(tmp_path, capsys):
     ledger = tmp_path / "ledger.json"
-    ledger.write_text(json.dumps({"version": 1, "sources": [
-        {"id": 1, "url": "https://www.nih.gov/a", "title": "t1", "accessed": "d",
-         "quotes": [{"text": "q1", "added": "d"}]},
-        {"id": 2, "url": "https://www.reuters.com/b", "title": "t2", "accessed": "d",
-         "quotes": [{"text": "q2", "added": "d"}]},
-        {"id": 3, "url": "https://en.wikipedia.org/wiki/x", "title": "t3", "accessed": "d",
-         "quotes": [{"text": "q3", "added": "d"}]},
-        {"id": 4, "url": "https://eathealthy365.com/cure", "title": "t4", "accessed": "d",
-         "served_by": "keyless_rescue", "backend_error": "timeout"},
-        {"id": 5, "url": "https://someone.example.net/blog", "title": "t5", "accessed": "d",
-         "quotes": [{"text": "q5", "added": "d"}]},
-    ]}), encoding="utf-8")
+    ledger.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": [
+                    {
+                        "id": 1,
+                        "url": "https://www.nih.gov/a",
+                        "title": "t1",
+                        "accessed": "d",
+                        "quotes": [{"text": "q1", "added": "d"}],
+                    },
+                    {
+                        "id": 2,
+                        "url": "https://www.reuters.com/b",
+                        "title": "t2",
+                        "accessed": "d",
+                        "quotes": [{"text": "q2", "added": "d"}],
+                    },
+                    {
+                        "id": 3,
+                        "url": "https://en.wikipedia.org/wiki/x",
+                        "title": "t3",
+                        "accessed": "d",
+                        "quotes": [{"text": "q3", "added": "d"}],
+                    },
+                    {
+                        "id": 4,
+                        "url": "https://eathealthy365.com/cure",
+                        "title": "t4",
+                        "accessed": "d",
+                        "served_by": "keyless_rescue",
+                        "backend_error": "timeout",
+                    },
+                    {
+                        "id": 5,
+                        "url": "https://someone.example.net/blog",
+                        "title": "t5",
+                        "accessed": "d",
+                        "quotes": [{"text": "q5", "added": "d"}],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     draft = tmp_path / "draft.md"
     draft.write_text(
         "One sweeping claim cites every registered source at once.[1][2][3][4][5]\n",
@@ -211,17 +270,15 @@ def test_malformed_trust_json_is_io_error(tmp_path, capsys):
 
 
 def test_coverage_counts_unverified_and_gates_on_min(capsys):
-    code, rep, _ = run_json(
-        ["--draft", FIXTURES / "draft_cov.md", "--ledger", FIXTURES / "ledger_ok.json"], capsys
-    )
+    code, rep, _ = run_json(["--draft", FIXTURES / "draft_cov.md", "--ledger", FIXTURES / "ledger_ok.json"], capsys)
     assert code == 0
     assert rep["stats"]["sentences"] == 4
     assert rep["stats"]["cited_sentences"] == 1
     assert rep["stats"]["coverage"] == 0.5  # cited ∪ [unverified] per sources.py
 
     code, rep, _ = run_json(
-        ["--draft", FIXTURES / "draft_cov.md", "--ledger", FIXTURES / "ledger_ok.json",
-         "--min-coverage", "0.75"], capsys
+        ["--draft", FIXTURES / "draft_cov.md", "--ledger", FIXTURES / "ledger_ok.json", "--min-coverage", "0.75"],
+        capsys,
     )
     assert code == 1
     assert rep["summary"]["pass"] is False
@@ -230,7 +287,7 @@ def test_coverage_counts_unverified_and_gates_on_min(capsys):
 def test_strict_turns_any_flag_into_failure(capsys):
     base = ["--draft", FIXTURES / "draft_strict.md", "--ledger", FIXTURES / "ledger_bad.json"]
     code, rep, _ = run_json(base, capsys)
-    assert code == 0                       # flags don't fail a non-strict run
+    assert code == 0  # flags don't fail a non-strict run
     assert rep["summary"]["flags_n"] > 0
     code, rep, _ = run_json([*base, "--strict"], capsys)
     assert code == 1
@@ -253,9 +310,7 @@ def test_empty_draft_is_neutral(tmp_path, capsys):
 
 
 def test_judge_fixture_verdicts_and_summary(capsys):
-    code, rep, _ = run_json(
-        [*bad_args(), "--judge", "fixture", "--judge-fixture", FIXTURES / "judge_bad.json"], capsys
-    )
+    code, rep, _ = run_json([*bad_args(), "--judge", "fixture", "--judge-fixture", FIXTURES / "judge_bad.json"], capsys)
     assert rep["judge"] == {"mode": "fixture", "status": "ok", "verdicts_n": 3}
     verdicts = {c["sentence"]: c["verdict"] for c in rep["claims"]}
     assert verdicts == {0: "unsupported", 1: "supported", 2: "conflicting"}
@@ -267,14 +322,28 @@ def test_judge_fixture_verdicts_and_summary(capsys):
 
 def test_judge_fixture_multi_id_claim_conflicting(capsys):
     code, rep, _ = run_json(
-        ["--draft", FIXTURES / "draft_multi.md", "--ledger", FIXTURES / "ledger_ok.json",
-         "--judge", "fixture", "--judge-fixture", FIXTURES / "judge_multi.json"], capsys
+        [
+            "--draft",
+            FIXTURES / "draft_multi.md",
+            "--ledger",
+            FIXTURES / "ledger_ok.json",
+            "--judge",
+            "fixture",
+            "--judge-fixture",
+            FIXTURES / "judge_multi.json",
+        ],
+        capsys,
     )
     assert code == 0  # conflicting verdict is advisory — mechanical checks all pass
-    assert rep["claims"] == [{
-        "sentence": 0, "ids": [1, 2], "verdict": "conflicting",
-        "quote": "1984 / 1985", "note": "the two sources disagree on the year",
-    }]
+    assert rep["claims"] == [
+        {
+            "sentence": 0,
+            "ids": [1, 2],
+            "verdict": "conflicting",
+            "quote": "1984 / 1985",
+            "note": "the two sources disagree on the year",
+        }
+    ]
     assert rep["summary"]["conflicting_n"] == 1
 
 
@@ -287,9 +356,13 @@ def test_judge_aux_success_makes_one_batched_call(monkeypatch, capsys):
 
     fake_aux = types.SimpleNamespace(
         call_llm=fake_call_llm,
-        extract_content_or_reasoning=lambda _resp: json.dumps({"claims": [
-            {"sentence": 0, "ids": [1], "verdict": "unsupported", "quote": "q", "note": "n"},
-        ]}),
+        extract_content_or_reasoning=lambda _resp: json.dumps(
+            {
+                "claims": [
+                    {"sentence": 0, "ids": [1], "verdict": "unsupported", "quote": "q", "note": "n"},
+                ]
+            }
+        ),
     )
     monkeypatch.setattr(fc, "_load_aux", lambda: fake_aux)
     code, rep, _ = run_json([*ok_args(), "--judge", "aux"], capsys)
@@ -343,8 +416,7 @@ def test_io_errors_exit_2(tmp_path, capsys):
 
 def test_judge_fixture_io_errors_exit_2(tmp_path, capsys):
     # missing fixture file
-    code = fc.main([*map(str, ok_args()), "--judge", "fixture",
-                    "--judge-fixture", str(tmp_path / "nope.json")])
+    code = fc.main([*map(str, ok_args()), "--judge", "fixture", "--judge-fixture", str(tmp_path / "nope.json")])
     assert code == 2
     # malformed fixture JSON
     bad = tmp_path / "judge.json"

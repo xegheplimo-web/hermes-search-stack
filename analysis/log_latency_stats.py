@@ -167,9 +167,7 @@ def analyze(lines: list[str], cutoff: datetime, top: int) -> dict:
         "api_lines_no_ts": api_unparsed_ts,
         "pre": summarize(pre_lats),
         "post": summarize(post_lats),
-        "post_buckets": {
-            label: summarize(post_bucket_lats[label]) for label, _, _ in BUCKETS
-        },
+        "post_buckets": {label: summarize(post_bucket_lats[label]) for label, _, _ in BUCKETS},
         "events_pre": events_pre,
         "events_post": events_post,
         "top_post": post_slowest[:top],
@@ -185,8 +183,7 @@ def to_markdown(res: dict, top: int) -> str:
     out.append("# agent.log latency stats (speed round 2)")
     out.append("")
     out.append(f"Cutoff (local): `{res['cutoff']}` — pre = `< cutoff`, post = `>= cutoff`.")
-    out.append(f"API-call lines parsed: {res['api_lines_total']} "
-               f"(no-timestamp skipped: {res['api_lines_no_ts']}).")
+    out.append(f"API-call lines parsed: {res['api_lines_total']} (no-timestamp skipped: {res['api_lines_no_ts']}).")
     out.append("")
     out.append("## Table A — post-fix latency by in= bucket")
     out.append("")
@@ -216,12 +213,12 @@ def to_markdown(res: dict, top: int) -> str:
     out.append("| rank | ts | latency (s) | in | out | model/provider |")
     out.append("|---|---|---|---|---|---|")
     for i, r in enumerate(res["top_post"], 1):
-        out.append(f"| {i} | {r['ts']} | {r['latency_s']:.1f} | {r['in']} | "
-                   f"{r['out']} | {r['model']}/{r['provider']} |")
+        out.append(
+            f"| {i} | {r['ts']} | {r['latency_s']:.1f} | {r['in']} | {r['out']} | {r['model']}/{r['provider']} |"
+        )
     out.append("")
     for i, r in enumerate(res["top_post"], 1):
-        out.append(f"### #{i} — {r['ts']} latency={r['latency_s']:.1f}s "
-                   f"in={r['in']} out={r['out']}")
+        out.append(f"### #{i} — {r['ts']} latency={r['latency_s']:.1f}s in={r['in']} out={r['out']}")
         out.append("")
         out.append("```")
         out.append(r["line"])
@@ -258,8 +255,9 @@ def to_jsonable(res: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Hermes agent.log latency stats (round 2).")
     ap.add_argument("--log", default=DEFAULT_LOG, help="path to agent.log")
-    ap.add_argument("--cutoff", default=DEFAULT_CUTOFF,
-                    help='pre/post split, format "YYYY-MM-DD HH:MM" (default: %(default)s)')
+    ap.add_argument(
+        "--cutoff", default=DEFAULT_CUTOFF, help='pre/post split, format "YYYY-MM-DD HH:MM" (default: %(default)s)'
+    )
     ap.add_argument("--top", type=int, default=DEFAULT_TOP, help="slowest-N to list")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of Markdown")
     args = ap.parse_args(argv)
@@ -267,8 +265,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cutoff = datetime.strptime(args.cutoff, "%Y-%m-%d %H:%M")
     except ValueError:
-        print(f"error: bad --cutoff {args.cutoff!r}, want 'YYYY-MM-DD HH:MM'",
-              file=sys.stderr)
+        print(f"error: bad --cutoff {args.cutoff!r}, want 'YYYY-MM-DD HH:MM'", file=sys.stderr)
         return 2
     if args.top < 1:
         print("error: --top must be >= 1", file=sys.stderr)

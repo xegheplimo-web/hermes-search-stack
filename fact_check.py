@@ -149,24 +149,78 @@ LOW_TRUST_SCORE = 0.50
 # after lowercasing and stripping a leading "www.". ".gov"/".edu"-style suffixes
 # (official government/academic domains) land in ``primary``.
 _DOMAIN_TIERS = (
-    ("primary", (
-        "gov", "edu", "gov.uk", "ac.uk", "edu.au", "gov.au", "gc.ca", "gouv.fr",
-        "bund.de", "europa.eu", "un.org", "who.int", "nato.int",
-        "nih.gov", "cdc.gov", "fda.gov", "nasa.gov", "noaa.gov", "sec.gov",
-        "arxiv.org", "biorxiv.org", "doi.org", "pubmed.ncbi.nlm.nih.gov",
-        "nature.com", "science.org", "nejm.org", "thelancet.com",
-    )),
-    ("news", (
-        "reuters.com", "apnews.com", "ap.org", "afp.com", "bbc.com", "bbc.co.uk",
-        "nytimes.com", "wsj.com", "washingtonpost.com", "theguardian.com",
-        "ft.com", "bloomberg.com", "economist.com", "npr.org", "dw.com",
-        "france24.com", "aljazeera.com", "cnn.com", "politico.com",
-        "arstechnica.com", "wired.com", "theverge.com", "statnews.com",
-    )),
-    ("aggregator", (
-        "wikipedia.org", "britannica.com", "news.google.com", "news.yahoo.com",
-        "msn.com", "yahoo.com", "bing.com",
-    )),
+    (
+        "primary",
+        (
+            "gov",
+            "edu",
+            "gov.uk",
+            "ac.uk",
+            "edu.au",
+            "gov.au",
+            "gc.ca",
+            "gouv.fr",
+            "bund.de",
+            "europa.eu",
+            "un.org",
+            "who.int",
+            "nato.int",
+            "nih.gov",
+            "cdc.gov",
+            "fda.gov",
+            "nasa.gov",
+            "noaa.gov",
+            "sec.gov",
+            "arxiv.org",
+            "biorxiv.org",
+            "doi.org",
+            "pubmed.ncbi.nlm.nih.gov",
+            "nature.com",
+            "science.org",
+            "nejm.org",
+            "thelancet.com",
+        ),
+    ),
+    (
+        "news",
+        (
+            "reuters.com",
+            "apnews.com",
+            "ap.org",
+            "afp.com",
+            "bbc.com",
+            "bbc.co.uk",
+            "nytimes.com",
+            "wsj.com",
+            "washingtonpost.com",
+            "theguardian.com",
+            "ft.com",
+            "bloomberg.com",
+            "economist.com",
+            "npr.org",
+            "dw.com",
+            "france24.com",
+            "aljazeera.com",
+            "cnn.com",
+            "politico.com",
+            "arstechnica.com",
+            "wired.com",
+            "theverge.com",
+            "statnews.com",
+        ),
+    ),
+    (
+        "aggregator",
+        (
+            "wikipedia.org",
+            "britannica.com",
+            "news.google.com",
+            "news.yahoo.com",
+            "msn.com",
+            "yahoo.com",
+            "bing.com",
+        ),
+    ),
 )
 
 # Ledger-entry markers that lower a source's score (stamped by web tools per
@@ -177,8 +231,7 @@ _SNIPPET_DEMOTION = 0.20
 _UNKNOWN_HOST_DEMOTION = 0.10
 
 # Keys a ledger entry may carry indicating a full-page extract exists on disk.
-_EXTRACT_KEYS = ("extracted", "fetched", "full_text", "fulltext",
-                 "text_path", "extract_path", "cache_path")
+_EXTRACT_KEYS = ("extracted", "fetched", "full_text", "fulltext", "text_path", "extract_path", "cache_path")
 _EXTRACT_KINDS = {"extract", "extracted", "full_text", "fulltext", "webpage", "page"}
 
 
@@ -205,7 +258,7 @@ def _split_draft(text: str) -> tuple[str, dict[int, str]]:
     listed: dict[int, str] = {}
     if header_idx >= 0:
         url_re = re.compile(r"https?://[^\s\"'<>)\]}]+")
-        for line in lines[header_idx + 1:]:
+        for line in lines[header_idx + 1 :]:
             m = _SOURCE_LINE_RE.match(line)
             if m:
                 url_match = url_re.search(line)
@@ -301,10 +354,11 @@ def _is_snippet_only(entry: dict) -> bool:
         return False
     if any(entry.get(k) for k in _EXTRACT_KEYS):
         return False
-    kind = str(
-        entry.get("kind") or entry.get("source_type") or entry.get("provenance")
-        or entry.get("origin") or ""
-    ).strip().lower()
+    kind = (
+        str(entry.get("kind") or entry.get("source_type") or entry.get("provenance") or entry.get("origin") or "")
+        .strip()
+        .lower()
+    )
     if kind in _EXTRACT_KINDS:
         return False
     return True  # snippet markers or silence alike: no evidence of a full read
@@ -355,6 +409,7 @@ def _hermes_home() -> Path:
     """Mirror of the grounded-citations ``_hermes_home.py`` resolution pattern."""
     try:
         from hermes_constants import get_hermes_home
+
         return Path(get_hermes_home())
     except Exception:
         val = os.environ.get("HERMES_HOME", "").strip()
@@ -380,6 +435,7 @@ def _load_aux():
     """
     try:
         import agent.auxiliary_client as aux
+
         return aux
     except ImportError:
         pass
@@ -389,6 +445,7 @@ def _load_aux():
         sys.path.insert(0, str(root))
         try:
             import agent.auxiliary_client as aux
+
             return aux
         except ImportError:
             try:
@@ -419,7 +476,7 @@ def _build_judge_messages(claims: list[dict], by_id: dict[int, dict]) -> list[di
     """One batched prompt: claims grouped with their cited sources' evidence."""
     lines = ["CLAIMS (sentence index → claim text → cited ids):"]
     for c in claims:
-        lines.append(f'- sentence {c["sentence"]} | ids {c["ids"]} | {c["text"]}')
+        lines.append(f"- sentence {c['sentence']} | ids {c['ids']} | {c['text']}")
     lines.append("")
     lines.append("SOURCES (evidence attached per id):")
     for cid in sorted({i for c in claims for i in c["ids"]}):
@@ -427,10 +484,7 @@ def _build_judge_messages(claims: list[dict], by_id: dict[int, dict]) -> list[di
         if entry is None:
             lines.append(f"[{cid}] NOT IN LEDGER")
             continue
-        lines.append(
-            f'[{cid}] {entry.get("title", "")} <{_host_of(entry.get("url", ""))}> '
-            f'{entry.get("url", "")}'
-        )
+        lines.append(f"[{cid}] {entry.get('title', '')} <{_host_of(entry.get('url', ''))}> {entry.get('url', '')}")
         quotes = entry.get("quotes") or []
         for q in quotes[:6]:
             lines.append(f'    quote: "{q.get("text", "")}"')
@@ -552,9 +606,7 @@ def run_check(
     all_ids = [int(m) for s in sentences for m in _CITE_RE.findall(s)]
     cited_set = set(all_ids)
     cited_sentences = sum(1 for ids in sentence_ids if ids)
-    covered = sum(
-        1 for i, s in enumerate(sentences) if sentence_ids[i] or _UNVERIFIED_RE.search(s)
-    )
+    covered = sum(1 for i, s in enumerate(sentences) if sentence_ids[i] or _UNVERIFIED_RE.search(s))
     coverage = (covered / len(sentences)) if sentences else 0.0
 
     trust_map = {s["id"]: _score_entry(s, trust_spec) for s in sources}
@@ -577,18 +629,21 @@ def run_check(
             if not entry.get("quotes"):
                 _flag("no_quote", cid, si, "ledger entry carries no verbatim quote")
             if _is_snippet_only(entry):
-                _flag("snippet_only", cid, si,
-                      "entry not backed by a full extract (no quotes/extract marker)")
+                _flag("snippet_only", cid, si, "entry not backed by a full extract (no quotes/extract marker)")
             t = trust_map[cid]
             if t["score"] < LOW_TRUST_SCORE:
-                _flag("low_trust", cid, si,
-                      f"trust score {t['score']:.2f} below {LOW_TRUST_SCORE} "
-                      f"(tier={t['tier']}, demotions={t['demotions']})")
+                _flag(
+                    "low_trust",
+                    cid,
+                    si,
+                    f"trust score {t['score']:.2f} below {LOW_TRUST_SCORE} "
+                    f"(tier={t['tier']}, demotions={t['demotions']})",
+                )
 
     claims = [
-        {"sentence": i, "ids": ids, "verdict": "not_judged", "quote": "", "note": "",
-         "text": sentences[i]}
-        for i, ids in enumerate(sentence_ids) if ids
+        {"sentence": i, "ids": ids, "verdict": "not_judged", "quote": "", "note": "", "text": sentences[i]}
+        for i, ids in enumerate(sentence_ids)
+        if ids
     ]
 
     notices: list[str] = []
@@ -604,10 +659,7 @@ def run_check(
         except Exception as exc:  # noqa: BLE001 — degradation is the contract
             verdicts = {}
             jstat = {"mode": "aux", "status": "unavailable", "verdicts_n": 0}
-            notices.append(
-                f"judge aux unavailable ({type(exc).__name__}: {exc}); "
-                "mechanical checks still applied"
-            )
+            notices.append(f"judge aux unavailable ({type(exc).__name__}: {exc}); mechanical checks still applied")
 
     for c in claims:
         v = verdicts.get(c["sentence"])
@@ -630,10 +682,7 @@ def run_check(
             "coverage": round(coverage, 4),
         },
         "flags": flags,
-        "claims": [
-            {k: c[k] for k in ("sentence", "ids", "verdict", "quote", "note")}
-            for c in claims
-        ],
+        "claims": [{k: c[k] for k in ("sentence", "ids", "verdict", "quote", "note")} for c in claims],
         "trust": {str(i): t for i, t in sorted(trust_map.items())},
         "judge": jstat,
         "summary": {
@@ -688,20 +737,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="fact_check.py",
         description="F3-P2 verification pass: mechanical citation checks + trust "
-                    "scoring + optional aux/fixture claim judge (contract v1).",
+        "scoring + optional aux/fixture claim judge (contract v1).",
     )
     parser.add_argument("--draft", required=True, help="draft markdown file")
     parser.add_argument("--ledger", required=True, help="citation ledger JSON")
     parser.add_argument("--trust", help="trust.json sidecar (host tier/score overrides)")
-    parser.add_argument("--judge", choices=["off", "aux", "fixture"], default="off",
-                        help="claim adjudication mode (default: off)")
+    parser.add_argument(
+        "--judge", choices=["off", "aux", "fixture"], default="off", help="claim adjudication mode (default: off)"
+    )
     parser.add_argument("--judge-fixture", help="canned verdicts JSON for --judge fixture")
     parser.add_argument("--json", action="store_true", help="emit fact_check.v1 JSON")
     parser.add_argument("--out", help="write the report to this path instead of stdout")
-    parser.add_argument("--strict", action="store_true",
-                        help="fail on ANY flag (not just missing_id/coverage)")
-    parser.add_argument("--min-coverage", type=float, default=0.5,
-                        help="required cited-sentence share (default: 0.5)")
+    parser.add_argument("--strict", action="store_true", help="fail on ANY flag (not just missing_id/coverage)")
+    parser.add_argument("--min-coverage", type=float, default=0.5, help="required cited-sentence share (default: 0.5)")
     args = parser.parse_args(argv)
 
     if args.judge == "fixture" and not args.judge_fixture:
@@ -727,11 +775,7 @@ def main(argv: list[str] | None = None) -> int:
     for n in notices:
         print(f"notice: {n}", file=sys.stderr)
 
-    payload = (
-        json.dumps(report, indent=2, ensure_ascii=False)
-        if args.json
-        else _render_text(report, args.min_coverage)
-    )
+    payload = json.dumps(report, indent=2, ensure_ascii=False) if args.json else _render_text(report, args.min_coverage)
     if args.out:
         try:
             Path(args.out).write_text(payload + "\n", encoding="utf-8")
