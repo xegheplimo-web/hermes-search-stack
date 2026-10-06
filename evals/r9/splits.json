@@ -1,0 +1,10 @@
+{
+  "_comment": "R10 quality-corpus splits (frozen 2026-10-07, see analysis/r10-interfaces.md §C). Holdout is never used for optimization loops — only for release checks.",
+  "rule": {
+    "holdout": "ids where int(id[3:]) % 10 == 5",
+    "challenge": "difficulty == 'hard' minus holdout",
+    "regression": "all remaining cases minus holdout"
+  },
+  "holdout": ["vn-005", "vn-015", "vn-025", "vn-035", "vn-045"],
+  "created": "2026-10-07"
+}
