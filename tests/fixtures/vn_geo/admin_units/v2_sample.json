@@ -1,0 +1,239 @@
+[
+  {
+    "name": "Tỉnh Bắc Ninh",
+    "code": 24,
+    "codename": "bac_ninh",
+    "division_type": "tỉnh",
+    "phone_code": 222,
+    "wards": [
+      {
+        "name": "Phường Yên Dũng",
+        "code": 7681,
+        "codename": "phuong_yen_dung",
+        "division_type": "phường",
+        "short_codename": "yen_dung"
+      },
+      {
+        "name": "Phường Bắc Giang",
+        "code": 7210,
+        "codename": "phuong_bac_giang",
+        "division_type": "phường",
+        "short_codename": "bac_giang"
+      },
+      {
+        "name": "Phường Đa Mai",
+        "code": 7228,
+        "codename": "phuong_da_mai",
+        "division_type": "phường",
+        "short_codename": "da_mai"
+      },
+      {
+        "name": "Xã Xuân Lương",
+        "code": 7246,
+        "codename": "xa_xuan_luong",
+        "division_type": "xã",
+        "short_codename": "xuan_luong"
+      },
+      {
+        "name": "Xã Tam Tiến",
+        "code": 7264,
+        "codename": "xa_tam_tien",
+        "division_type": "xã",
+        "short_codename": "tam_tien"
+      },
+      {
+        "name": "Xã Đồng Kỳ",
+        "code": 7282,
+        "codename": "xa_dong_ky",
+        "division_type": "xã",
+        "short_codename": "dong_ky"
+      },
+      {
+        "name": "Xã Yên Thế",
+        "code": 7288,
+        "codename": "xa_yen_the",
+        "division_type": "xã",
+        "short_codename": "yen_the"
+      },
+      {
+        "name": "Xã Bố Hạ",
+        "code": 7294,
+        "codename": "xa_bo_ha",
+        "division_type": "xã",
+        "short_codename": "bo_ha"
+      },
+      {
+        "name": "Xã Nhã Nam",
+        "code": 7306,
+        "codename": "xa_nha_nam",
+        "division_type": "xã",
+        "short_codename": "nha_nam"
+      },
+      {
+        "name": "Xã Phúc Hòa",
+        "code": 7330,
+        "codename": "xa_phuc_hoa",
+        "division_type": "xã",
+        "short_codename": "phuc_hoa"
+      }
+    ]
+  },
+  {
+    "name": "Thành phố Hà Nội",
+    "code": 1,
+    "codename": "ha_noi",
+    "division_type": "thành phố trung ương",
+    "phone_code": 24,
+    "wards": [
+      {
+        "name": "Phường Ba Đình",
+        "code": 4,
+        "codename": "phuong_ba_dinh",
+        "division_type": "phường",
+        "short_codename": "ba_dinh"
+      },
+      {
+        "name": "Phường Ngọc Hà",
+        "code": 8,
+        "codename": "phuong_ngoc_ha",
+        "division_type": "phường",
+        "short_codename": "ngoc_ha"
+      },
+      {
+        "name": "Phường Giảng Võ",
+        "code": 25,
+        "codename": "phuong_giang_vo",
+        "division_type": "phường",
+        "short_codename": "giang_vo"
+      },
+      {
+        "name": "Phường Hoàn Kiếm",
+        "code": 70,
+        "codename": "phuong_hoan_kiem",
+        "division_type": "phường",
+        "short_codename": "hoan_kiem"
+      },
+      {
+        "name": "Phường Cửa Nam",
+        "code": 82,
+        "codename": "phuong_cua_nam",
+        "division_type": "phường",
+        "short_codename": "cua_nam"
+      },
+      {
+        "name": "Phường Phú Thượng",
+        "code": 91,
+        "codename": "phuong_phu_thuong",
+        "division_type": "phường",
+        "short_codename": "phu_thuong"
+      },
+      {
+        "name": "Phường Hồng Hà",
+        "code": 97,
+        "codename": "phuong_hong_ha",
+        "division_type": "phường",
+        "short_codename": "hong_ha"
+      },
+      {
+        "name": "Phường Tây Hồ",
+        "code": 103,
+        "codename": "phuong_tay_ho",
+        "division_type": "phường",
+        "short_codename": "tay_ho"
+      },
+      {
+        "name": "Phường Bồ Đề",
+        "code": 118,
+        "codename": "phuong_bo_de",
+        "division_type": "phường",
+        "short_codename": "bo_de"
+      },
+      {
+        "name": "Phường Việt Hưng",
+        "code": 127,
+        "codename": "phuong_viet_hung",
+        "division_type": "phường",
+        "short_codename": "viet_hung"
+      }
+    ]
+  },
+  {
+    "name": "Thành phố Hải Phòng",
+    "code": 31,
+    "codename": "hai_phong",
+    "division_type": "thành phố trung ương",
+    "phone_code": 225,
+    "wards": [
+      {
+        "name": "Phường Thành Đông",
+        "code": 10507,
+        "codename": "phuong_thanh_dong",
+        "division_type": "phường",
+        "short_codename": "thanh_dong"
+      },
+      {
+        "name": "Phường Hải Dương",
+        "code": 10525,
+        "codename": "phuong_hai_duong",
+        "division_type": "phường",
+        "short_codename": "hai_duong"
+      },
+      {
+        "name": "Phường Lê Thanh Nghị",
+        "code": 10532,
+        "codename": "phuong_le_thanh_nghi",
+        "division_type": "phường",
+        "short_codename": "le_thanh_nghi"
+      },
+      {
+        "name": "Phường Tân Hưng",
+        "code": 10537,
+        "codename": "phuong_tan_hung",
+        "division_type": "phường",
+        "short_codename": "tan_hung"
+      },
+      {
+        "name": "Phường Việt Hòa",
+        "code": 10543,
+        "codename": "phuong_viet_hoa",
+        "division_type": "phường",
+        "short_codename": "viet_hoa"
+      },
+      {
+        "name": "Phường Chí Linh",
+        "code": 10546,
+        "codename": "phuong_chi_linh",
+        "division_type": "phường",
+        "short_codename": "chi_linh"
+      },
+      {
+        "name": "Phường Chu Văn An",
+        "code": 10549,
+        "codename": "phuong_chu_van_an",
+        "division_type": "phường",
+        "short_codename": "chu_van_an"
+      },
+      {
+        "name": "Phường Nguyễn Trãi",
+        "code": 10552,
+        "codename": "phuong_nguyen_trai",
+        "division_type": "phường",
+        "short_codename": "nguyen_trai"
+      },
+      {
+        "name": "Phường Trần Hưng Đạo",
+        "code": 10570,
+        "codename": "phuong_tran_hung_dao",
+        "division_type": "phường",
+        "short_codename": "tran_hung_dao"
+      },
+      {
+        "name": "Phường Trần Nhân Tông",
+        "code": 10573,
+        "codename": "phuong_tran_nhan_tong",
+        "division_type": "phường",
+        "short_codename": "tran_nhan_tong"
+      }
+    ]
+  }
+]

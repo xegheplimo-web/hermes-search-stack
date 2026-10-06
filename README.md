@@ -28,6 +28,20 @@ Key results (see `REPORT.md` for full evidence):
 
 Details: `SPEC.md` (spec + change log), `REPORT.md` (orchestrator report + evidence).
 
+## VN geo/business data kit (`vn_geo`, round 4)
+
+Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI per module):
+
+| Module | Source | What it does |
+|---|---|---|
+| `admin_units` | provinces.open-api.vn (v1/v2) | fetch / normalize / ingest / FTS lookup of provinces–districts–wards (post-2025 merger) |
+| `overpass_poi` | OSM Overpass (mirror ring) | bbox POI fetch by category → JSONL → ingest |
+| `places` | Google Maps scan JSONL | parse VN rating labels, save/refresh with new-vs-updated counts, diff (added/removed/changed) |
+| `enterprises` | provincial CKAN open data (Hải Phòng, Tây Ninh…) | monthly business-registration datasets → ingest / query |
+
+Source playbook and per-source verification notes: `analysis/vn-geodata-playbook.md`,
+`analysis/vn-business-data-sources.md`. Run: `python -m vn_geo.<module> --help`.
+
 ## Repo layout
 
 | Path | Contents |
@@ -35,6 +49,9 @@ Details: `SPEC.md` (spec + change log), `REPORT.md` (orchestrator report + evide
 | `verify_web_stack.py` | T1 live search/extract quality battery (needs local Hermes env) |
 | `test_keyless_fallback.py` | T2 keyless fallback + rescue proof (needs local Hermes env) |
 | `tests/` | Offline unit tests (run in CI) |
+| `searchstore/` | SQLite (FTS5 + vector tier) document store — content-addressed versioning, events, diff (round 3) |
+| `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises (round 4) |
+| `analysis/` | Design docs, frozen interfaces, VN data-source playbook |
 | `references/` | API dumps / introspection helpers used during development |
 | `evidence/` | Committed battery outputs (JSON/MD/logs) |
 | `SPEC.md`, `REPORT.md` | Spec and verification report |

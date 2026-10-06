@@ -1,0 +1,55 @@
+[
+  {
+    "name": "Tỉnh Bắc Ninh",
+    "code": 27,
+    "division_type": "tỉnh",
+    "codename": "tinh_bac_ninh",
+    "phone_code": 222,
+    "districts": [
+      {
+        "name": "Thành phố Bắc Ninh",
+        "code": 256,
+        "division_type": "thành phố",
+        "codename": "thanh_pho_bac_ninh",
+        "province_code": 27,
+        "wards": [
+          {
+            "name": "Phường Vũ Ninh",
+            "code": 9163,
+            "division_type": "phường",
+            "codename": "phuong_vu_ninh",
+            "district_code": 256
+          },
+          {
+            "name": "Phường Đáp Cầu",
+            "code": 9166,
+            "division_type": "phường",
+            "codename": "phuong_dap_cau",
+            "district_code": 256
+          },
+          {
+            "name": "Phường Thị Cầu",
+            "code": 9169,
+            "division_type": "phường",
+            "codename": "phuong_thi_cau",
+            "district_code": 256
+          },
+          {
+            "name": "Phường Kinh Bắc",
+            "code": 9172,
+            "division_type": "phường",
+            "codename": "phuong_kinh_bac",
+            "district_code": 256
+          },
+          {
+            "name": "Phường Đại Phúc",
+            "code": 9181,
+            "division_type": "phường",
+            "codename": "phuong_dai_phuc",
+            "district_code": 256
+          }
+        ]
+      }
+    ]
+  }
+]
