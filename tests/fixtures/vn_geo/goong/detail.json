@@ -1,0 +1,16 @@
+{
+  "result": {
+    "place_id": "ChIJxyz789YenDung",
+    "formatted_address": "Phường Yên Dũng, Bắc Ninh, Việt Nam",
+    "geometry": {"location": {"lat": 21.2012, "lng": 106.2493}},
+    "plus_code": {
+      "compound_code": "P72R+3C Bắc Ninh, Việt Nam",
+      "global_code": "7P72R+3C"
+    },
+    "compound": {"district": "Bắc Ninh", "province": "Bắc Ninh"},
+    "name": "Yên Dũng",
+    "url": "https://goong.io/place/ChIJxyz789YenDung",
+    "types": ["locality", "political"]
+  },
+  "status": "OK"
+}

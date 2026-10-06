@@ -1,0 +1,16 @@
+{
+  "predictions": [
+    {
+      "description": "Quán Ăn Yên Dũng, Bắc Ninh, Việt Nam",
+      "matched_substrings": [{"length": 5, "offset": 0}],
+      "place_id": "ChIJabc123YenDung",
+      "reference": "ChIJabc123YenDung",
+      "structured_formatting": {
+        "main_text": "Quán Ăn Yên Dũng",
+        "secondary_text": "Bắc Ninh, Việt Nam"
+      },
+      "terms": [{"offset": 0, "value": "Quán Ăn Yên Dũng"}]
+    }
+  ],
+  "status": "OK"
+}

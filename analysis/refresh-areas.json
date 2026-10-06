@@ -1,0 +1,26 @@
+{
+  "areas": [
+    {
+      "name": "Yên Dũng",
+      "province": "Tỉnh Bắc Ninh",
+      "overpass": {
+        "bbox": [21.17, 106.2, 21.24, 106.3],
+        "categories": ["food", "shops", "services"]
+      }
+    },
+    {
+      "name": "Hải Phòng",
+      "province": "Thành phố Hải Phòng",
+      "ckan": {
+        "datasets": ["haiphong-new", "haiphong-dissolved"]
+      }
+    },
+    {
+      "name": "Tây Ninh",
+      "province": "Tỉnh Tây Ninh",
+      "ckan": {
+        "datasets": ["tayninh-list"]
+      }
+    }
+  ]
+}

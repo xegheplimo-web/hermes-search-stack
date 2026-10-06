@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "address_components": [
+        {"long_name": "Yên Dũng", "short_name": "Yên Dũng", "types": ["locality", "political"]},
+        {"long_name": "Bắc Ninh", "short_name": "Bắc Ninh", "types": ["administrative_area_level_1", "political"]}
+      ],
+      "formatted_address": "Phường Yên Dũng, Bắc Ninh, Việt Nam",
+      "geometry": {"location": {"lat": 21.2012, "lng": 106.2493}},
+      "place_id": "ChIJxyz789YenDung",
+      "plus_code": {
+        "compound_code": "P72R+3C Bắc Ninh, Việt Nam",
+        "global_code": "7P72R+3C"
+      },
+      "compound": {"district": "Bắc Ninh", "province": "Bắc Ninh"},
+      "name": "Yên Dũng",
+      "address": "Phường Yên Dũng",
+      "types": ["locality", "political"]
+    }
+  ],
+  "status": "OK"
+}

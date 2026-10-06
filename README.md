@@ -28,7 +28,7 @@ Key results (see `REPORT.md` for full evidence):
 
 Details: `SPEC.md` (spec + change log), `REPORT.md` (orchestrator report + evidence).
 
-## VN geo/business data kit (`vn_geo`, round 4)
+## VN geo/business data kit (`vn_geo`, rounds 4–5)
 
 Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI per module):
 
@@ -38,6 +38,8 @@ Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI pe
 | `overpass_poi` | OSM Overpass (mirror ring) | bbox POI fetch by category → JSONL → ingest |
 | `places` | Google Maps scan JSONL | parse VN rating labels, save/refresh with new-vs-updated counts, diff (added/removed/changed) |
 | `enterprises` | provincial CKAN open data (Hải Phòng, Tây Ninh…) | monthly business-registration datasets → ingest / query |
+| `refresh` | the other modules (no new source) | coverage report (what's missing per area/source) + auto-backfill `run` with content-addressed dedup — re-running unchanged data adds **0 rows**; weekly cron: `scripts/refresh_cron.py` + `analysis/refresh-areas.json` |
+| `goong` | Goong REST v2 (VN Google-Maps alternative) | autocomplete / geocode / reverse / place detail with a hard local **1,000 req/day cap** (free tier); key via `GOONG_API_KEY` or `<LOCALAPPDATA>/hermes/vn-geo/keys.env` (never in repo) — account activation pending |
 
 Source playbook and per-source verification notes: `analysis/vn-geodata-playbook.md`,
 `analysis/vn-business-data-sources.md`. Run: `python -m vn_geo.<module> --help`.
@@ -50,7 +52,8 @@ Source playbook and per-source verification notes: `analysis/vn-geodata-playbook
 | `test_keyless_fallback.py` | T2 keyless fallback + rescue proof (needs local Hermes env) |
 | `tests/` | Offline unit tests (run in CI) |
 | `searchstore/` | SQLite (FTS5 + vector tier) document store — content-addressed versioning, events, diff (round 3) |
-| `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises (round 4) |
+| `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill refresh, Goong client (rounds 4–5) |
+| `scripts/` | Ops scripts — weekly vn-geo refresh cron runner |
 | `analysis/` | Design docs, frozen interfaces, VN data-source playbook |
 | `references/` | API dumps / introspection helpers used during development |
 | `evidence/` | Committed battery outputs (JSON/MD/logs) |

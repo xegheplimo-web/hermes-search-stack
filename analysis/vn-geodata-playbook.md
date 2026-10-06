@@ -1,8 +1,8 @@
 # Playbook: Dữ liệu kinh doanh / cửa hàng / doanh nghiệp / địa danh Việt Nam
 
-Cập nhật: 2026-10-06 (v2 — R4-C xong; thêm trạng thái tài khoản Goong).
+Cập nhật: 2026-10-06 (v3 — Round 5 xong: refresh engine + Goong client; cập nhật đường liên hệ + cơ chế giới hạn 1.000/ngày).
 Mục đích: cách lấy + **cập nhật** dữ liệu địa điểm kinh doanh, doanh nghiệp, địa danh VN cho search stack.
-Trạng thái toolkit: `vn_geo/` (Round 4 — **đã xong**: admin_units, overpass_poi, places, enterprises; 102/102 tests).
+Trạng thái toolkit: `vn_geo/` (Round 4 — admin_units, overpass_poi, places, enterprises; **Round 5 — refresh engine + goong client**; toàn bộ test suite xanh, CI + Security xanh).
 
 **Định hướng (Sếp chốt 06/10): CHỈ CẦN VIỆT NAM.** Nguồn ưu tiên 100% VN: **Goong · Vietmap · Map4D · CKAN tỉnh · provinces.open-api.vn · masothue · Foody · Vpostcode**. Google Maps Platform (API trả phí) = loại (chặn vùng VN). Google Maps consumer qua browser (maps.google.com) **vẫn giữ** — đó là công cụ xem dữ liệu VN đang dùng, không phải GMP. OSM chỉ là nguồn nền bổ trợ.
 
@@ -82,7 +82,7 @@ quét lại khu vực định kỳ, so sánh version cũ/mới → biết ngay q
 ## 3. Quyết định cần Sếp (đều có free tier — thứ tự đề xuất theo R4-C: tính theo "đồng/độ sâu dữ liệu")
 
 1. **Vietmap** — test trước: 60k transactions free, 9.36M POI VN-native, địa chỉ cũ+mới → đo chất lượng nông thôn (Bắc Ninh quê mình) là rõ nhất. **Nên test.**
-2. **Goong** — ✅ **đã đăng ký 06/10/2026** (qua Google — `xegheplimo@gmail.com`): dashboard đã có **$100 + free tier** (1.000 req/ngày, 120k map loads/tháng). ⏳ **Tạo key đang bị chặn** — nút "Tạo Key" báo *"Bạn chỉ có thể tạo key khi được admin kích hoạt"*. **Chính sách mới từ 04/2026**: Goong **bỏ tự động kích hoạt sau 24h**, **SĐT bắt buộc khi đăng ký**, muốn kích hoạt phải **liên hệ trực tiếp Hỗ trợ Khách hàng** (SĐT liên hệ phải trùng SĐT đã đăng ký). Hotline: **0869 697 502** (kỹ thuật) · **0904 522 538** (kế toán). → **Sếp gọi/Zalo hotline để kích hoạt** (nói: tài khoản đăng ký qua Google bằng email xegheplimo@gmail.com, cung cấp SĐT của Sếp); sau khi active → em tạo key (lưu file local, không vào repo/chat) + test live Bắc Ninh + viết `vn_geo/goong.py`.
+2. **Goong** — ✅ **đã đăng ký 06/10/2026** (qua Google — `xegheplimo@gmail.com`): dashboard đã có **$100 + free tier** (1.000 req/ngày, 120k map loads/tháng). ⏳ **Tạo key đang chờ admin kích hoạt** (chính sách 04/2026: bỏ auto-activate sau 24h, SĐT bắt buộc, phải liên hệ Hỗ trợ KH). **2 đường liên hệ:** ① **Hotline** 0869 697 502 (kỹ thuật) · 0904 522 538 (kế toán) — nói: "cần kích hoạt tài khoản Goong đăng ký qua Google, email xegheplimo@gmail.com" + SĐT của Sếp; ② **Email** `admin@goong.io` (cc `support@goong.io`) — gửi từ chính Gmail đăng ký kèm SĐT liên hệ (soạn + gửi được qua browser). **Giới hạn 1.000/ngày:** console Goong **không có** ô đặt cap theo ngày (tab "Giới Hạn" chỉ chặn URL/IP) → đã enforce ở **code**: `vn_geo/goong.py::DailyLimiter` (1.000 req/ngày, state `<LOCALAPPDATA>/hermes/vn-geo/goong_usage.json`); lớp 2 = Goong tự cảnh báo khi chạm 15%/25% số dư. Sau khi active → tạo key (lưu file local, không vào repo/chat) + test live Bắc Ninh.
 3. ~~Google Places API~~ — ❌ **đã loại**: Google chặn Maps Platform cho tài khoản VN (prohibited territory — verify 06/10/2026 bằng console + ToS). Không phải lựa chọn cho pipeline này. (Cùng nhóm thay thế VN: Map4D.)
 
 ## 4. Roadmap phase 2 (sau Round 4)
@@ -90,7 +90,7 @@ quét lại khu vực định kỳ, so sánh version cũ/mới → biết ngay q
 - [ ] Bulk OSM Geofabrik extract → POI toàn quốc (chạy 1 lần/tháng)
 - [ ] Vpostcode API (liên hệ Vietnam Post) — chuẩn hóa địa chỉ
 - [ ] gosom scraper (Docker) — batch GMaps lớn khi cần (vd: quét cả tỉnh)
-- [ ] Auto-refresh cron: khu vực theo dõi (Yên Dũng, Tân An…) quét lại hàng tuần → diff report
+- [x] **Auto-refresh cron** (Round 5 ✅): `vn_geo/refresh.py` — coverage (báo thiếu) + backfill `run` (dedup: chạy lại không thêm bản ghi; đã chứng minh 3 lần chạy → 0 new) + cron Hermes **"vn-geo weekly refresh"** (thứ Hai 08:00) → `scripts/refresh_cron.py`, config `analysis/refresh-areas.json` (Yên Dũng · Hải Phòng · Tây Ninh); im lặng khi không có gì mới, chỉ báo khi có dữ liệu mới/lỗi.
 - [ ] GeoJSON ranh giới (thanglequoc) → phục vụ "trong phường X" chính xác
 
 ## 5. ToS / pháp lý (dùng cá nhân)
