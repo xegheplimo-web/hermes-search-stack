@@ -37,6 +37,13 @@ Fix triệt để (không `# nosec`): **literal SQL maps** ở `store.py` (stats
 Security workflow sang `searchstore/`** (phát hiện thêm 2 chỗ B608 trong `store.py` trước khi ship). Kết quả cuối:
 `bandit -ll` No issues · full suite 222 passed · ruff sạch · CI 19s ✓ · Security 18s ✓.
 
+## Vector tier upgrade (post-ship)
+
+Đã cài **numpy 2.5.3 + sqlite-vec 0.1.9** vào dev venv → `tier_available()` = **"sqlite-vec"** (tier cao nhất).
+Verify: 18/18 vectors tests + full suite **222 passed** với tier active; E2E thật: `similar([0.9,0.1,0.0])` qua `vec_distance_cosine`
+→ doc "giá vàng" **0.9939** > doc "thời tiết" 0.1104 (đúng thứ tự + đúng cosine); `stats.vector_tier` = "sqlite-vec".
+Hai deps vào `requirements-dev.txt` → CI matrix cũng chạy tier cao nhất (floor python vẫn được test trực tiếp qua `_similar_python`).
+
 ## Deliverables
 
 `searchstore/` (10 file) · `tests/test_searchstore_{core,misc,cli,adapters,vectors}.py` · `tests/fixtures/searchstore/` ·
