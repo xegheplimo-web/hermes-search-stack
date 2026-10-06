@@ -84,7 +84,7 @@ def _days_ago(n):
 
 def test_fixtures_are_well_formed_rss():
     for path in (VNEXPRESS, TUOITRE, THANHNIEN):
-        root = ET.fromstring(path.read_bytes())
+        root = ET.fromstring(path.read_bytes())  # nosec B314 - parses repo fixtures, not untrusted data
         assert root.tag == "rss"
         assert root.find("channel") is not None
 
