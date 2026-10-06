@@ -30,6 +30,13 @@ sự kiện lifecycle (nén context) — do spawn thiếu `persist_on_release`. 
 nguyên vẹn); R3-B/R3-C được **respawn với `persist_on_release=true`** và hoàn thành bình thường.
 Bài học đã ghi vào skill `lead-orchestrator` (§5b + §9). Log run bị kill giữ tại `agent_logs/r3b.log.killed`.
 
+## Post-ship: security gate (commit `158444a`)
+
+Push đầu (`ebde643`): CI xanh nhưng **Security đỏ** — bandit B608 (Medium): f-string SQL trong test helper `_count`.
+Fix triệt để (không `# nosec`): **literal SQL maps** ở `store.py` (stats/export) + test helper; đồng thời **mở rộng scope
+Security workflow sang `searchstore/`** (phát hiện thêm 2 chỗ B608 trong `store.py` trước khi ship). Kết quả cuối:
+`bandit -ll` No issues · full suite 222 passed · ruff sạch · CI 19s ✓ · Security 18s ✓.
+
 ## Deliverables
 
 `searchstore/` (10 file) · `tests/test_searchstore_{core,misc,cli,adapters,vectors}.py` · `tests/fixtures/searchstore/` ·
