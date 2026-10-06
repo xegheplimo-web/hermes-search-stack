@@ -32,6 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from typing import Any
 
 from searchstore import SearchStore, SearchStoreError
 from searchstore import store as _store
@@ -335,3 +336,167 @@ def diff_events(db_path: str) -> list[dict]:
     """
     with SearchStore(db_path) as store:
         return _store.entity_events(store.conn)
+
+
+# ------------------------------------------------- seed orchestration glue (R13 integration — Hermes-owned)
+
+
+def _load_area_config(path: str) -> dict:
+    """Read a refresh-areas JSON config. Raises VnGeoError on bad input."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        raise VnGeoError(f"seed: cannot read config {path!r}: {e}") from e
+    if not isinstance(cfg, dict):
+        raise VnGeoError(f"seed: config {path!r} must be a JSON object")
+    areas = cfg.get("areas")
+    if not isinstance(areas, list) or not areas:
+        raise VnGeoError(f"seed: config {path!r} has no 'areas' list")
+    return cfg
+
+
+def _connector_map() -> dict[str, Any]:
+    """Resolve available connector modules, themselves reporting availability."""
+    from . import connectors_ckan_ext, connectors_masothue
+
+    modules: dict[str, Any] = {}
+    for mod in (connectors_masothue, connectors_ckan_ext):
+        available = getattr(mod, "AVAILABLE", True)
+        if available is False:
+            continue
+        if callable(getattr(mod, "fetch", None)):
+            modules[mod.__name__.rsplit(".", 1)[-1]] = mod
+    return modules
+
+
+def _seed_hosts_for(area_cfg: dict, connectors: dict[str, Any]) -> list[tuple[str, dict]]:
+    """Choose (connector_name, sub-config) pairs for one area entry.
+
+    Both connectors take the area name positionally (``fetch(area, …)``) and
+    resolve their own per-source config (CKAN datasets / masothue index).
+    """
+    hosts: list[tuple[str, dict]] = []
+    name = str(area_cfg.get("name") or "").strip()
+    if not name:
+        return hosts
+    if "connectors_ckan_ext" in connectors and isinstance(area_cfg.get("ckan"), dict):
+        hosts.append(("connectors_ckan_ext", {}))
+    if "connectors_masothue" in connectors:
+        hosts.append(("connectors_masothue", {}))
+    return hosts
+
+
+def seed_from_config(config_path: str, db_path: str, max_entities: int | None = None) -> dict:
+    """Seed the entity store from a refresh-areas config (§4 CLI contract).
+
+    Per area: run connector ``fetch()`` -> ``normalize()`` -> ``geocode()``
+    (only for records WITHOUT coordinates) -> ``upsert_entity()``. Idempotent:
+    re-running an unchanged config and source data adds 0 rows (dedupe §2).
+    Returns a summary dict for the CLI payload.
+    """
+    cfg = _load_area_config(config_path)
+    if cfg.get("business_enabled") is False:
+        return {"ok": True, "seeded": 0, "skipped": "business_enabled=false", "areas": []}
+    connectors = _connector_map()
+    if not connectors:
+        raise VnGeoError("seed: no connectors available (expected connectors_masothue / connectors_ckan_ext)")
+    geocode_missing = bool(cfg.get("business_geocode_missing", True))
+    totals: dict[str, Any] = {"areas": []}
+    seeded = 0
+    for area_cfg in cfg["areas"]:
+        if not isinstance(area_cfg, dict) or not area_cfg.get("name"):
+            continue
+        area_name = str(area_cfg["name"])
+        province = str(area_cfg.get("province") or "")
+        area_summary = {"area": area_name, "fetched": 0, "seeded": 0, "skipped_sources": []}
+        for conn_name, sub_cfg in _seed_hosts_for(area_cfg, connectors):
+            module = connectors[conn_name]
+            try:
+                records = module.fetch(area_name, **sub_cfg)
+            except Exception as e:  # noqa: BLE001 - per-area isolation, summarized below
+                area_summary["skipped_sources"].append(f"{conn_name}: {type(e).__name__}: {e}")
+                continue
+            area_summary["fetched"] += len(records or [])
+            for rec in records or []:
+                if max_entities is not None and seeded >= max_entities:
+                    break
+                try:
+                    entity = normalize(rec, conn_source(conn_name, province))
+                except VnGeoError:
+                    continue  # malformed record — the connector's raw payload, skipped
+                if geocode_missing and entity.get("lat") is None and entity.get("lng") is None:
+                    if area_name and not entity.get("area_old"):
+                        entity["area_old"] = area_name
+                    if province and not entity.get("province"):
+                        entity["province"] = province
+                    entity = geocode(entity)
+                    time.sleep(1.5)  # Nominatim politeness (>=1.5 s between calls)
+                upsert_entity(db_path, entity)
+                seeded += 1
+                area_summary["seeded"] += 1
+            if max_entities is not None and seeded >= max_entities:
+                break
+        totals["areas"].append(area_summary)
+        if max_entities is not None and seeded >= max_entities:
+            break
+    totals["ok"] = True
+    totals["seeded"] = seeded
+    return totals
+
+
+def conn_source(conn_name: str, province: str = "") -> str:
+    """Map a connector module name to its entity-schema ``source`` id.
+
+    ``ENTITY_SOURCES`` has no plain ``ckan``: CKAN entities carry the
+    province-specific ids the §2 schema froze (``ckan_hp``, ``ckan_tn``).
+    ``province`` disambiguates when the connector covers several provinces.
+    """
+    if conn_name == "connectors_masothue":
+        return "masothue"
+    if conn_name == "connectors_ckan_ext":
+        return "ckan_hp" if "hải phòng" in (province or "").lower() else "ckan_tn"
+    return conn_name
+
+
+# ------------------------------------------------- classify-rev glue (R13 integration — Hermes-owned)
+
+
+def classify_rev(db_path: str) -> dict:
+    """Re-run ``categories.classify`` over stored entities (§4 CLI contract).
+
+    Recomputes ``(category, kind, cat_confidence)`` from each entity's
+    ``category_raw`` + ``name`` and re-upserts ONLY changed entities — the
+    store's versioned write path records an ``entity_changed`` event, so
+    ``diff_events`` sees reclassifications. Idempotent: an unchanged second
+    run reports ``changed=0`` and writes nothing. Returns
+    ``{"checked": <n>, "changed": <m>}``.
+    """
+    checked = 0
+    changed = 0
+    try:
+        with SearchStore(db_path) as store:
+            conn = store.conn
+            _store.ensure_entity_schema(conn)
+            docs = list(_store._iter_entity_docs(conn))
+            for _doc_id, meta in docs:
+                checked += 1
+                cat_id, cat_confidence = categories.classify(
+                    str(meta.get("category_raw") or ""), str(meta.get("name") or "")
+                )
+                kind = categories.kind_of(cat_id)
+                if (
+                    cat_id == meta.get("category")
+                    and kind == meta.get("kind")
+                    and cat_confidence == meta.get("cat_confidence")
+                ):
+                    continue
+                ent = dict(meta)
+                ent["category"] = cat_id
+                ent["kind"] = kind
+                ent["cat_confidence"] = cat_confidence
+                _store.entity_upsert(store, ent)
+                changed += 1
+    except SearchStoreError as e:
+        raise VnGeoError(str(e)) from e
+    return {"checked": checked, "changed": changed}
