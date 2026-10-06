@@ -52,8 +52,7 @@ FTS_BACKFILL_SQL = (
     "replace(replace(text,'đ','d'),'Đ','d') FROM documents"
 )
 
-_MIGRATION_1 = (
-    """\
+_MIGRATION_1_HEAD = """\
 PRAGMA user_version = 1;
 
 CREATE TABLE IF NOT EXISTS documents(
@@ -74,8 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_url_key ON documents(url_key);
 CREATE INDEX IF NOT EXISTS idx_documents_fetched ON documents(fetched_at);
 
 """
-    + _FTS_DDL
-    + """
+
+_MIGRATION_1_TAIL = """
 
 CREATE TABLE IF NOT EXISTS searches(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,7 +139,9 @@ CREATE VIEW IF NOT EXISTS documents_current AS
 SELECT d.* FROM documents d
 WHERE d.id = (SELECT MAX(x.id) FROM documents x WHERE x.url_key = d.url_key);
 """
-)
+
+# Static schema DDL assembled once from the module constants above; no user input reaches it.
+_MIGRATION_1 = _MIGRATION_1_HEAD + _FTS_DDL + _MIGRATION_1_TAIL
 
 _MIGRATIONS = [_MIGRATION_1]
 
