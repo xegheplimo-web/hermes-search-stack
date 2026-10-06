@@ -90,7 +90,7 @@ quét lại khu vực định kỳ, so sánh version cũ/mới → biết ngay q
 - [ ] Bulk OSM Geofabrik extract → POI toàn quốc (chạy 1 lần/tháng)
 - [ ] Vpostcode API (liên hệ Vietnam Post) — chuẩn hóa địa chỉ
 - [ ] gosom scraper (Docker) — batch GMaps lớn khi cần (vd: quét cả tỉnh)
-- [x] **Auto-refresh cron** (Round 5 ✅): `vn_geo/refresh.py` — coverage (báo thiếu) + backfill `run` (dedup: chạy lại không thêm bản ghi; đã chứng minh 3 lần chạy → 0 new) + cron Hermes **"vn-geo weekly refresh"** (thứ Hai 08:00) → `scripts/refresh_cron.py`, config `analysis/refresh-areas.json` (Yên Dũng · Hải Phòng · Tây Ninh); im lặng khi không có gì mới, chỉ báo khi có dữ liệu mới/lỗi.
+- [x] **Auto-refresh cron** (Round 5 ✅): `vn_geo/refresh.py` — coverage (báo thiếu) + backfill `run` (dedup: chạy lại không thêm bản ghi; đã chứng minh 3 lần chạy → 0 new) + cron Hermes **"vn-geo weekly refresh"** (thứ Hai 08:00) → `scripts/refresh_cron.py`, config `analysis/refresh-areas.json` (Yên Dũng · Hải Phòng · Tây Ninh); im lặng khi không có gì mới, chỉ báo khi có dữ liệu mới/lỗi. Vận hành: log ở `data/refresh.log` + cron history; **chưa có kênh nhận thông báo** (`deliver='all'` — tự nối khi Sếp kết nối kênh); Overpass mirror có lúc 504/timeout tạm thời — lần chạy sau thường xanh.
 - [ ] GeoJSON ranh giới (thanglequoc) → phục vụ "trong phường X" chính xác
 
 ## 5. ToS / pháp lý (dùng cá nhân)
