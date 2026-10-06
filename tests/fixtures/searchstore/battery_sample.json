@@ -1,0 +1,240 @@
+{
+  "generated": "2026-10-06T02:17:37",
+  "run_command": "verify_web_stack.py",
+  "live_calls": 10,
+  "cases": [
+    {
+      "id": "S1",
+      "kind": "search",
+      "input": "capital of Australia population 2026",
+      "pass": true,
+      "latency_s": 2.0,
+      "n_results": 5,
+      "backends": ["managed", "perplexity"],
+      "error": null,
+      "notes": "EN factual",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'capital of Australia population 2026' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'capital of Australia population 2026' (limit=10, managed)",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S2",
+      "kind": "search",
+      "input": "AI news October 2026",
+      "pass": true,
+      "latency_s": 1.36,
+      "n_results": 5,
+      "backends": ["managed", "perplexity"],
+      "error": null,
+      "notes": "EN recency; recency_2026=True",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'AI news October 2026' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'AI news October 2026' (limit=10, managed)",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S3",
+      "kind": "search",
+      "input": "giá vàng SJC hôm nay",
+      "pass": true,
+      "latency_s": 1.17,
+      "n_results": 5,
+      "backends": ["managed", "perplexity"],
+      "error": null,
+      "notes": "VI",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'giá vàng SJC hôm nay' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'giá vàng SJC hôm nay' (limit=10, managed)",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S4",
+      "kind": "search",
+      "input": "Nous Research Hermes Agent web search",
+      "pass": true,
+      "latency_s": 1.26,
+      "n_results": 5,
+      "backends": ["managed", "perplexity"],
+      "error": null,
+      "notes": "EN project",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'Nous Research Hermes Agent web search' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'Nous Research Hermes Agent web search' (limit=10, managed)",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S5",
+      "kind": "search",
+      "input": "DeepSeek V4 release",
+      "pass": true,
+      "latency_s": 1.28,
+      "n_results": 5,
+      "backends": ["managed", "perplexity"],
+      "error": null,
+      "notes": "EN product",
+      "evidence": [
+        "INFO tools.web_tools: Web search via perplexity: 'DeepSeek V4 release' (limit: 5)",
+        "INFO plugins.web.perplexity.provider: Perplexity search: 'DeepSeek V4 release' (limit=10, managed)",
+        "INFO httpx: HTTP Request: POST https://perplexity-gateway.nousresearch.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "S6",
+      "kind": "search",
+      "input": "local docs query without provider",
+      "pass": true,
+      "latency_s": 0.9,
+      "n_results": 3,
+      "backends": ["managed"],
+      "error": null,
+      "notes": "no provider evidence line",
+      "evidence": [
+        "INFO tools.web_tools: Web search: 'local docs query without provider' (limit: 3)",
+        "INFO httpx: HTTP Request: GET https://example.com/search \"HTTP/1.1 200 OK\""
+      ]
+    },
+    {
+      "id": "E1",
+      "kind": "extract",
+      "input": "https://webgia.com/gia-vang/",
+      "pass": true,
+      "latency_s": 0.67,
+      "chars": 3143,
+      "backends": ["keenable", "keyless"],
+      "error": null,
+      "notes": "article from S3 (VI gold)",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via keenable: 1 URL(s)",
+        "INFO tools.web_tools: https://webgia.com/gia-vang/ (3143 chars, whole)"
+      ],
+      "attempts": [
+        {
+          "url": "https://webgia.com/gia-vang/",
+          "latency_s": 0.67,
+          "chars": 3143,
+          "backends": ["keenable", "keyless"],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Web extract via keenable: 1 URL(s)",
+            "INFO tools.web_tools: https://webgia.com/gia-vang/ (3143 chars, whole)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "kind": "extract",
+      "input": "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+      "pass": true,
+      "latency_s": 0.44,
+      "chars": 3118,
+      "backends": ["exa", "keyless"],
+      "error": null,
+      "notes": "docs page; fixed URL",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via exa: 1 URL(s)",
+        "INFO tools.web_tools: https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search (3118 chars, whole)"
+      ],
+      "attempts": [
+        {
+          "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+          "latency_s": 0.44,
+          "chars": 3118,
+          "backends": ["exa", "keyless"],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Web extract via exa: 1 URL(s)",
+            "INFO tools.web_tools: Extracted content from 1 pages"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "kind": "extract",
+      "input": "https://github.com/NousResearch/hermes-agent",
+      "pass": true,
+      "latency_s": 0.89,
+      "chars": 6075,
+      "backends": ["keyless", "parallel"],
+      "error": null,
+      "notes": "github README; fixed URL",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via parallel: 1 URL(s)",
+        "INFO tools.web_tools: https://github.com/NousResearch/hermes-agent (6075 chars, whole)"
+      ],
+      "attempts": [
+        {
+          "url": "https://github.com/NousResearch/hermes-agent",
+          "latency_s": 0.89,
+          "chars": 6075,
+          "backends": ["keyless", "parallel"],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Web extract via parallel: 1 URL(s)",
+            "INFO tools.web_tools: Extracted content from 1 pages"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E4",
+      "kind": "extract",
+      "input": "https://www.mercurynews.com/tag/artificial-intelligence/",
+      "pass": true,
+      "latency_s": 0.66,
+      "chars": 15385,
+      "backends": ["keenable", "keyless"],
+      "error": null,
+      "notes": "article from S2 (AI news)",
+      "evidence": [
+        "INFO tools.web_tools: Extracting content from 1 URL(s)",
+        "INFO tools.web_tools: Web extract via keenable: 1 URL(s)",
+        "INFO tools.web_tools: https://www.mercurynews.com/tag/artificial-intelligence/ (truncated 19334 -> 15385 chars)"
+      ],
+      "attempts": [
+        {
+          "url": "https://www.tlt.com/insights-and-events/insight/tlts-ai-brief-october-2026",
+          "latency_s": 0.85,
+          "chars": 0,
+          "backends": ["firecrawl", "keyless"],
+          "error": "per-url error: Keyless Firecrawl extract failed: Client error '403 Forbidden'",
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Web extract via firecrawl: 1 URL(s)",
+            "INFO httpx: HTTP Request: POST https://api.firecrawl.dev/v2/scrape \"HTTP/1.1 403 Forbidden\""
+          ]
+        },
+        {
+          "url": "https://www.mercurynews.com/tag/artificial-intelligence/",
+          "latency_s": 0.66,
+          "chars": 15385,
+          "backends": ["keenable", "keyless"],
+          "error": null,
+          "notes": "",
+          "evidence": [
+            "INFO tools.web_tools: Web extract via keenable: 1 URL(s)",
+            "INFO tools.web_tools: Extracted content from 1 pages"
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "pass": 10,
+    "fail": 0,
+    "total": 10,
+    "elapsed_s": 26.13
+  }
+}
