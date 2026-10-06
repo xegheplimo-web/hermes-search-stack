@@ -53,6 +53,16 @@ def _json(obj: dict | None) -> str:
     return json.dumps(obj if obj is not None else {}, ensure_ascii=False)
 
 
+def _fold_d(text: str) -> str:
+    """Fold đ/Đ → d for FTS queries. Mirrors the SQL nested ``replace()`` in
+    the documents_fts triggers / FTS_BACKFILL_SQL exactly
+    (analysis/r9-interfaces.md §D)."""
+    return text.replace("đ", "d").replace("Đ", "d")
+
+
+fold_d = _fold_d
+
+
 _FTS_SQL = """
 SELECT d.id AS doc_id, d.url, d.title, d.provider, d.fetched_at,
        snippet(documents_fts, 1, '<b>', '</b>', '…', ?) AS snippet,
@@ -273,7 +283,7 @@ class SearchStore:
 
     def _fts_search(self, query: str, *, limit: int, snippet_len: int, mode_used: str) -> list[dict]:
         try:
-            rows = self._conn.execute(_FTS_SQL, (snippet_len, query, limit)).fetchall()
+            rows = self._conn.execute(_FTS_SQL, (snippet_len, _fold_d(query), limit)).fetchall()
         except sqlite3.Error as e:
             raise SearchStoreError(f"invalid FTS query {query!r}: {e}") from e
         return [
@@ -364,7 +374,8 @@ class SearchStore:
 
     def rebuild_fts(self) -> int:
         with self._conn:
-            self._conn.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+            self._conn.execute("DELETE FROM documents_fts")
+            self._conn.execute(db.FTS_BACKFILL_SQL)
         return self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
 
     # ---------- vector tier (lazy: searchstore.vectors is optional) ----------

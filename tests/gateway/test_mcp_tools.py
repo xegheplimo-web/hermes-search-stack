@@ -8,16 +8,21 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from types import SimpleNamespace
 
 import pytest
 
 mcp = pytest.importorskip("mcp")
 
+from gateway.backends.stub import StubBackend as GatewayStubBackend  # noqa: E402
+from gateway.config import GatewayConfig  # noqa: E402
+from gateway.core.engine import Engine  # noqa: E402
 from gateway.mcp.server import build_http_app, build_mcp  # noqa: E402
 from gateway.mcp.tools import (  # noqa: E402
     FROZEN_TOOL_PARAMS,
     TOOL_NAMES,
+    _resolve_backend,
     make_tools,
 )
 from searchstore import SearchStore  # noqa: E402
@@ -216,6 +221,58 @@ def test_no_backend_degrades_to_structured_error(tmp_path):
     assert fns["hermes_search"]("q")["error"]
     assert fns["hermes_extract"](["https://example.com/a"])["error"]
     assert fns["hermes_research"]("q")["answer_markdown"] == "a"
+
+
+# ---------------------------------------------------------------------------
+# r9 §B — tools resolve the real Engine's public ``backend`` accessor
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_backend_from_real_engine(cfg):
+    """``_resolve_backend`` hits the public ``Engine.backend`` property."""
+    engine = Engine(cfg, backend=GatewayStubBackend(), synth=SimpleNamespace())
+    resolved = _resolve_backend(engine, None)
+    assert resolved is engine.backend
+
+
+def test_resolve_backend_construction_failure_is_none(tmp_path):
+    """A backend that fails to build resolves to None, not a raised bind."""
+    bad_cfg = GatewayConfig(backend="bogus-backend", repo_root=str(tmp_path))
+    engine = Engine(bad_cfg)  # no injected backend -> lazy build on access raises
+    assert _resolve_backend(engine, None) is None
+
+
+def test_hermes_search_via_real_engine(cfg):
+    """tools built on a real Engine reach its backend via the public attr."""
+    engine = Engine(cfg, backend=GatewayStubBackend(), synth=SimpleNamespace())
+    fns = make_tools(engine)  # no backend= override — must resolve via engine
+    out = fns["hermes_search"]("nghi dinh 168", max_results=3)
+    assert "error" not in out
+    assert len(out["results"]) == 3
+    assert out["results"][0]["title"]
+
+
+def test_hermes_extract_via_real_engine(cfg):
+    engine = Engine(cfg, backend=GatewayStubBackend(), synth=SimpleNamespace())
+    fns = make_tools(engine)
+    out = fns["hermes_extract"](["https://stub.example/article-1"])
+    assert "error" not in out
+    assert out["results"][0]["content"]
+
+
+def test_mcp_call_tool_hermes_search_returns_results(cfg):
+    """tools/call-style: through the MCP server with a real Engine."""
+
+    async def _call():
+        server = build_mcp(Engine(cfg, backend=GatewayStubBackend(), synth=SimpleNamespace()))
+        return await server.call_tool("hermes_search", {"query": "nghi dinh 168", "max_results": 2})
+
+    result = asyncio.run(_call())
+    assert getattr(result, "is_error", getattr(result, "isError", False)) is False
+    text = result.content[0].text
+    payload = json.loads(text)
+    assert "error" not in payload
+    assert len(payload["results"]) == 2
 
 
 # ---------------------------------------------------------------------------

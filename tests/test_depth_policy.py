@@ -13,11 +13,12 @@ import depth_policy as dp
 
 CASES = [
     {
-        "name": "empty signals default to fast",
+        "name": "empty signals default to fast (unmeasured chars skip)",
         "signals": {},
         "mode": "fast",
-        "score": 0.25,
-        "reasons_contain": ["few search results", "tiny extract"],
+        "score": 0.15,
+        "reasons_contain": ["few search results"],
+        "reasons_absent": ["tiny extract", "errors with thin evidence", "rich evidence"],
     },
     {
         "name": "all thin evidence escalates to deep",
@@ -225,13 +226,68 @@ def test_decision_table(case):
     assert decision["score"] == pytest.approx(case["score"])
     for fragment in case["reasons_contain"]:
         assert any(fragment in reason for reason in decision["reasons"]), decision["reasons"]
+    for fragment in case.get("reasons_absent", []):
+        assert not any(fragment in reason for reason in decision["reasons"]), decision["reasons"]
     if not case["reasons_contain"]:
         assert decision["reasons"] == []
     assert set(decision) == {"mode", "score", "reasons"}
 
 
+# ---------- r9 §C: extract_char_totals measurement semantics ----------
+
+
+def test_absent_chars_equal_empty_chars():
+    """Missing key and explicit ``[]`` both mean "unmeasured"."""
+    assert dp.needs_depth({"query": "q", "search_result_counts": [2]}) == dp.needs_depth(
+        {"query": "q", "search_result_counts": [2], "extract_char_totals": []}
+    )
+
+
+def test_unmeasured_chars_skip_all_char_rules():
+    """``[]`` -> no TINY / ERRORS_THIN / RICH reasons, even with errors."""
+    decision = dp.needs_depth({"query": "q", "search_result_counts": [10], "errors": ["backend down"]})
+    assert decision["reasons"] == []
+    assert decision["score"] == 0.0
+    assert decision["mode"] == "fast"
+
+
+def test_measured_zeros_still_fire_tiny():
+    """``[0]`` is measured evidence of empty pages -> TINY fires (+0.10)."""
+    decision = dp.needs_depth({"query": "q", "search_result_counts": [10], "extract_char_totals": [0]})
+    assert any("tiny extract" in r for r in decision["reasons"])
+    assert decision["score"] == pytest.approx(0.10)
+
+
+def test_measured_zeros_plus_errors_fire_errors_thin():
+    """``[0]`` + errors -> ERRORS_THIN fires; same errors on ``[]`` do not."""
+    measured = dp.needs_depth({"query": "q", "search_result_counts": [10], "extract_char_totals": [0], "errors": ["e"]})
+    assert any("errors with thin evidence" in r for r in measured["reasons"])
+    assert measured["score"] == pytest.approx(0.30)  # 0.20 errors + 0.10 tiny
+    unmeasured = dp.needs_depth({"query": "q", "search_result_counts": [10], "errors": ["e"]})
+    assert not any("errors with thin evidence" in r for r in unmeasured["reasons"])
+
+
+def test_rich_discount_needs_measured_chars():
+    """RICH fires on measured large chars but can never fire on ``[]``."""
+    rich = dp.needs_depth({"query": "q", "search_result_counts": [10], "extract_char_totals": [16000]})
+    assert any("rich evidence" in r for r in rich["reasons"])
+    assert rich["score"] == pytest.approx(-0.20)
+    unmeasured = dp.needs_depth({"query": "q", "search_result_counts": [10]})
+    assert not any("rich evidence" in r for r in unmeasured["reasons"])
+
+
+def test_vn_marker_is_reserved_non_scoring():
+    """``vn`` validated but never scored: True == False == absent."""
+    base = {"query": "q", "search_result_counts": [5, 5], "extract_char_totals": [3000, 3000]}
+    with_vn = dp.needs_depth({**base, "query_markers": {"vn": True}})
+    without_vn = dp.needs_depth({**base, "query_markers": {"vn": False}})
+    absent = dp.needs_depth({**base, "query_markers": {}})
+    assert with_vn == without_vn == absent
+    assert not any("vn" in r.lower() for r in with_vn["reasons"])
+
+
 def test_partial_signals_use_defaults():
-    """A query-only payload behaves like empty evidence (fast at 0.25)."""
+    """A query-only payload behaves like empty evidence (fast at 0.15)."""
     assert dp.needs_depth({"query": "hello"}) == dp.needs_depth({})
 
 
@@ -260,6 +316,7 @@ BAD_SIGNALS = [
     {"name": "errors element wrong type", "signals": {"errors": [42]}},
     {"name": "markers wrong type", "signals": {"query_markers": [True]}},
     {"name": "marker value wrong type", "signals": {"query_markers": {"comparative": "yes"}}},
+    {"name": "vn marker wrong type", "signals": {"query_markers": {"vn": "yes"}}},
 ]
 
 

@@ -26,6 +26,14 @@ class GatewayCache:
         """Store a verified ``research_pack.v1`` pack; raises on gate failure."""
         return self._inner.put(pack)
 
+    def probe(self) -> None:
+        """Readiness probe: touch the cache DB for real; raises on failure.
+
+        ``/readyz`` calls this so ``cache.ok`` reflects a working get/put
+        path, not just a constructed object (r9 §A).
+        """
+        self._inner.probe()
+
     def close(self) -> None:
         self._inner.close()
 

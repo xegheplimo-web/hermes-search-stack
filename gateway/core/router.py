@@ -32,7 +32,8 @@ def query_markers(query: str) -> dict:
     when the query splits into two+ substantive clauses or carries 2+ question
     marks; ``vn`` on distinctly Vietnamese characters or common VN function
     words. Deterministic heuristics — markers are advisory inputs to the
-    policy, never a routing decision on their own.
+    policy, never a routing decision on their own. ``vn`` is RESERVED:
+    the policy validates it but it never scores (r9 §C).
     """
     text = str(query or "")
     clauses = [c for c in _SPLIT_RE.split(text) if len(c.split()) >= 4]
@@ -51,7 +52,12 @@ def build_signals(
     errors: list[str] | None = None,
     markers: dict | None = None,
 ) -> dict:
-    """Assemble the frozen ``depth_policy`` signals object (exact keys)."""
+    """Assemble the frozen ``depth_policy`` signals object (exact keys).
+
+    ``extract_char_totals`` carries *measured* per-page char counts only;
+    the default ``[]`` means "not measured" and the policy's char rules
+    skip on it — callers must not pad it with unmeasured zeros (r9 §C).
+    """
     return {
         "query": str(query or ""),
         "search_result_counts": [int(c) for c in (search_result_counts or [])],

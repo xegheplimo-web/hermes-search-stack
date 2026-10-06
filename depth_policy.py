@@ -6,17 +6,27 @@ Pure, deterministic, offline rule: decide whether a query deserves the
 derived from the ``results/battery_*.json`` data model (search result
 counts, extract char totals, backend errors, query markers).
 
-Frozen decision table (see ``analysis/r6-interfaces.md`` section 5):
+Frozen decision table (see ``analysis/r6-interfaces.md`` section 5,
+measurement semantics amended by ``analysis/r9-interfaces.md`` §C):
 
     +0.30  comparative marker
     +0.25  multi_part marker
     +0.20  deep-term hits >= 2
-    +0.20  errors present AND char_sum < 4000
+    +0.20  errors present AND char_sum < 4000        [measured chars only]
     +0.15  result_count sum < 6
-    +0.10  char_sum < 2000
-    -0.20  char_sum > 15000 AND result_count sum >= 10
+    +0.10  char_sum < 2000                            [measured chars only]
+    -0.20  char_sum > 15000 AND result_count sum >= 10 [measured chars only]
 
 ``mode`` is ``"deep"`` when ``score >= 0.45``, else ``"fast"``.
+
+``extract_char_totals`` semantics (r9 §C): an empty list ``[]`` means "no
+extract measurements were taken" — the three char-based rules SKIP
+entirely (no reason line, no weight). A non-empty list — including
+measured zeros like ``[0]`` — is real evidence and the rules apply
+normally (``[0]`` still fires TINY).
+
+``query_markers.vn`` is validated but RESERVED: it never contributes to
+the score and must not appear in ``reasons``.
 
 Signals schema (section 2.4)::
 
@@ -88,13 +98,15 @@ def _matched_deep_terms(query: str) -> list[str]:
     return matched
 
 
-def _validate_signals(signals: object) -> tuple[str, int, int, bool, bool, bool, list[str]]:
+def _validate_signals(signals: object) -> tuple[str, int, int, bool, bool, bool, bool, list[str]]:
     """Validate ``signals`` and return normalized components.
 
-    Returns ``(query, result_sum, char_sum, has_errors, comparative,
-    multi_part, deep_hits)``. Missing keys map to empty defaults
-    (``""``, ``[]``, ``{}``/``False``). Wrong types raise ``TypeError``;
-    negative counts raise ``ValueError``.
+    Returns ``(query, result_sum, char_sum, chars_measured, has_errors,
+    comparative, multi_part, deep_hits)``. Missing keys map to empty
+    defaults (``""``, ``[]``, ``{}``/``False``). ``chars_measured`` is True
+    only when ``extract_char_totals`` is a non-empty list — ``[]`` means
+    "not measured" (r9 §C). Wrong types raise ``TypeError``; negative
+    counts raise ``ValueError``.
     """
     if not isinstance(signals, dict):
         raise TypeError("signals must be a JSON object")
@@ -140,9 +152,10 @@ def _validate_signals(signals: object) -> tuple[str, int, int, bool, bool, bool,
 
     result_sum = sum(counts)
     char_sum = sum(chars)
+    chars_measured = len(chars) > 0
     has_errors = any(item.strip() for item in errors)
     deep_hits = _matched_deep_terms(query)
-    return query, result_sum, char_sum, has_errors, comparative, multi_part, deep_hits
+    return query, result_sum, char_sum, chars_measured, has_errors, comparative, multi_part, deep_hits
 
 
 def needs_depth(signals: dict) -> dict:
@@ -153,8 +166,13 @@ def needs_depth(signals: dict) -> dict:
     evidence discount). The function is pure and deterministic: equal
     inputs always produce equal outputs, with ``score`` rounded to two
     decimals.
+
+    Char-based rules (thin-evidence errors, tiny extract, rich evidence)
+    fire only when ``extract_char_totals`` is measured — a non-empty
+    list, zeros included. ``[]`` means "not measured" and the rules skip
+    (r9 §C). The ``vn`` query marker is reserved: validated, never scored.
     """
-    _, result_sum, char_sum, has_errors, comparative, multi_part, deep_hits = _validate_signals(signals)
+    _, result_sum, char_sum, chars_measured, has_errors, comparative, multi_part, deep_hits = _validate_signals(signals)
 
     score = 0.0
     reasons: list[str] = []
@@ -168,16 +186,16 @@ def needs_depth(signals: dict) -> dict:
     if len(deep_hits) >= DEEP_TERM_MIN_HITS:
         score += DEEP_TERM_WEIGHT
         reasons.append(f"deep-research terms matched ({', '.join(sorted(deep_hits))}) (+{DEEP_TERM_WEIGHT:.2f})")
-    if has_errors and char_sum < THIN_CHARS_MAX:
+    if chars_measured and has_errors and char_sum < THIN_CHARS_MAX:
         score += ERRORS_THIN_WEIGHT
         reasons.append(f"errors with thin evidence char_sum < {THIN_CHARS_MAX} (+{ERRORS_THIN_WEIGHT:.2f})")
     if result_sum < FEW_RESULTS_MAX:
         score += FEW_RESULTS_WEIGHT
         reasons.append(f"few search results sum < {FEW_RESULTS_MAX} (+{FEW_RESULTS_WEIGHT:.2f})")
-    if char_sum < TINY_CHARS_MAX:
+    if chars_measured and char_sum < TINY_CHARS_MAX:
         score += TINY_CHARS_WEIGHT
         reasons.append(f"tiny extract chars sum < {TINY_CHARS_MAX} (+{TINY_CHARS_WEIGHT:.2f})")
-    if char_sum > RICH_CHARS_MIN and result_sum >= RICH_RESULTS_MIN:
+    if chars_measured and char_sum > RICH_CHARS_MIN and result_sum >= RICH_RESULTS_MIN:
         score += RICH_EVIDENCE_WEIGHT
         reasons.append(
             f"rich evidence char_sum > {RICH_CHARS_MIN} with results >= {RICH_RESULTS_MIN} ({RICH_EVIDENCE_WEIGHT:.2f})"
@@ -195,11 +213,14 @@ def render_table() -> str:
         f"  +{COMPARATIVE_WEIGHT:.2f}  comparative query marker",
         f"  +{MULTI_PART_WEIGHT:.2f}  multi-part query marker",
         f"  +{DEEP_TERM_WEIGHT:.2f}  deep-term hits >= {DEEP_TERM_MIN_HITS} ({', '.join(DEEP_TERMS)})",
-        f"  +{ERRORS_THIN_WEIGHT:.2f}  errors present AND char_sum < {THIN_CHARS_MAX}",
+        f"  +{ERRORS_THIN_WEIGHT:.2f}  errors present AND char_sum < {THIN_CHARS_MAX} [measured chars only]",
         f"  +{FEW_RESULTS_WEIGHT:.2f}  result_count sum < {FEW_RESULTS_MAX}",
-        f"  +{TINY_CHARS_WEIGHT:.2f}  char_sum < {TINY_CHARS_MAX}",
-        f"  {RICH_EVIDENCE_WEIGHT:.2f}  char_sum > {RICH_CHARS_MIN} AND result_count sum >= {RICH_RESULTS_MIN}",
+        f"  +{TINY_CHARS_WEIGHT:.2f}  char_sum < {TINY_CHARS_MAX} [measured chars only]",
+        f"  {RICH_EVIDENCE_WEIGHT:.2f}  char_sum > {RICH_CHARS_MIN} AND result_count sum >= {RICH_RESULTS_MIN}"
+        " [measured chars only]",
         f"  mode = deep if score >= {DEEP_THRESHOLD:.2f} else fast",
+        "  note: extract_char_totals [] = unmeasured (char rules skip); [0,...] = measured zeros",
+        "  note: query_markers.vn is reserved and never scores",
     ]
     return "\n".join(lines)
 

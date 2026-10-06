@@ -9,6 +9,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -457,6 +458,85 @@ def test_store_event_failure_never_fails_main_op(tmp_path, capsys):
         ]
     )
     assert code == 0
+
+
+# ---------- cross-thread use (r9 §A) ----------
+
+
+def test_cross_thread_get_put(cache):
+    """The single connection is usable from a different thread."""
+    errors: list[BaseException] = []
+
+    def worker():
+        try:
+            cache.put(make_pack())
+            assert cache.get("what is sqlite") is not None
+            assert cache.stats()["packs"] == 1
+        except BaseException as exc:  # noqa: BLE001 — record, assert below
+            errors.append(exc)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join(timeout=30)
+    assert not t.is_alive()
+    assert errors == []
+
+
+def test_concurrent_threads_get_put(cache):
+    """8 threads x N mixed get/put on one shared cache: no exceptions."""
+    threads_n, ops_per_thread = 8, 10
+    errors: list[BaseException] = []
+
+    def worker(tid: int):
+        try:
+            for i in range(ops_per_thread):
+                cache.put(make_pack(query=f"t{tid}-q{i % 3}"))
+                cache.get(f"t{tid}-q{i % 3}")
+                cache.get("never stored")
+                cache.stats()
+        except BaseException as exc:  # noqa: BLE001 — record, assert below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(threads_n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    assert all(not t.is_alive() for t in threads)
+    assert errors == []
+    stats = cache.stats()
+    assert stats["packs"] == threads_n * 3  # 3 distinct queries per thread
+    assert stats["hits"] == threads_n * ops_per_thread  # one hit per stored get
+
+
+def test_probe_ok_on_healthy_db(cache):
+    """probe() touches the DB for real; healthy cache -> no raise."""
+    cache.probe()
+    cache.put(make_pack())
+    cache.probe()
+
+
+def test_probe_fails_when_closed(tmp_path):
+    """A closed cache cannot serve get/put -> probe must raise (r9 §A)."""
+    c = AnswerCache(tmp_path / "c.db")
+    c.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        c.probe()
+
+
+def test_probe_fails_on_missing_schema(tmp_path):
+    """A DB file without the cache schema cannot serve get/put."""
+    db = tmp_path / "empty.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE unrelated (id INTEGER)")
+    conn.close()
+    c = AnswerCache(db, create=False)
+    # schema is created on open, so probe passes; simulate breakage instead:
+    c.conn.execute("DROP TABLE packs")
+    c.conn.commit()
+    with pytest.raises(sqlite3.Error):
+        c.probe()
+    c.close()
 
 
 # ---------- subprocess smoke ----------

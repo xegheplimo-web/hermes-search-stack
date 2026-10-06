@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from searchstore import SearchStore, SearchStoreError, content_sha256, url_key
+from searchstore.store import fold_d
 
 from . import VnGeoError
 
@@ -235,8 +236,9 @@ def query_places(
     sql = "SELECT d.id, d.url, d.title, d.provider, d.meta FROM documents_current d WHERE d.format = 'place'"
     params: list = []
     if text:
+        # Standalone đ-folding index (analysis/r9-interfaces.md §D): fold query text via searchstore.store.fold_d.
         sql += " AND d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)"
-        params.append(text)
+        params.append(fold_d(text))
     try:
         rows = store.conn.execute(sql, params).fetchall()
     except sqlite3.Error as e:

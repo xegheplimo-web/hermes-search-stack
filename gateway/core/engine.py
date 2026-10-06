@@ -90,6 +90,18 @@ class Engine:
         self._synth = synth
         self._cache = cache
         self._cache_failed = False
+        self._cache_error: str | None = None
+
+    @property
+    def backend(self) -> SearchBackend:
+        """Public read-only accessor for the active search backend (r9 §B).
+
+        Lazily resolved via :meth:`_get_backend` — first access builds it
+        from ``config.backend``. MCP tools reach it through the public
+        attribute (``getattr(engine, "backend", None)``); inject
+        ``backend=`` at construction to override.
+        """
+        return self._get_backend()
 
     # ---------- frozen API ----------
 
@@ -143,6 +155,9 @@ class Engine:
         else:
             if depth != "auto":
                 warnings.append(f"unknown depth {depth!r} — using auto")
+            # extract_char_totals intentionally omitted: extraction has not
+            # run yet, so there is nothing measured — ``[]`` means "unknown"
+            # and the char-based rules skip (r9 §C). No phantom zeros.
             signals = build_signals(
                 query,
                 search_result_counts=[len(probe)],
@@ -272,8 +287,9 @@ class Engine:
                 from gateway.core.cache import GatewayCache
 
                 self._cache = GatewayCache(self.config.cache_db_path)
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — cache loss degrades, never crashes
                 self._cache_failed = True
+                self._cache_error = f"{type(exc).__name__}: {exc}"
         return self._cache
 
     def _cache_get(self, query: str, warnings: list[str]) -> dict | None:
@@ -488,7 +504,17 @@ class Engine:
         except Exception as exc:  # noqa: BLE001
             out["backend"] = {"name": None, "ok": False, "detail": str(exc)}
         cache = self._get_cache()
-        out["cache"] = {"ok": cache is not None}
+        if cache is None:
+            out["cache"] = {"ok": False, "detail": self._cache_error or "cache unavailable"}
+        else:
+            try:
+                probe = getattr(cache, "probe", None)
+                if not callable(probe):
+                    raise TypeError("cache object has no probe()")
+                probe()  # real DB touch — object presence alone proved nothing
+                out["cache"] = {"ok": True}
+            except Exception as exc:  # noqa: BLE001 — readiness reports, never raises
+                out["cache"] = {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         synth = self._get_synth()
         if synth is None:
             out["synth"] = {"ok": False}

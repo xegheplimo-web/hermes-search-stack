@@ -57,10 +57,19 @@ _DEFAULT_STORE_DB = "data/searchstore.db"
 
 
 def _resolve_backend(engine: Any, backend: Any | None) -> Any | None:
-    """Use the explicit backend, else the engine's own backend attribute."""
+    """Use the explicit backend, else the engine's public ``backend`` accessor.
+
+    ``Engine.backend`` is a lazy property (first access builds the backend
+    from config); a backend that fails to construct resolves to ``None`` so
+    the tools degrade to a structured ``{"error": ...}`` instead of taking
+    down the whole MCP bind (r9 §B).
+    """
     if backend is not None:
         return backend
-    return getattr(engine, "backend", None)
+    try:
+        return getattr(engine, "backend", None)
+    except Exception:  # noqa: BLE001 — resolution failure means "unavailable"
+        return None
 
 
 def _resolve_store_path(engine: Any, store_db: str | None) -> str:

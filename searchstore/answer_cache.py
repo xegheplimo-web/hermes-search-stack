@@ -29,6 +29,7 @@ import math
 import os
 import sqlite3
 import sys
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -159,7 +160,11 @@ def _is_verified(verification) -> bool:
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # check_same_thread=False: the cache is shared across a process (FastAPI
+    # serves handlers on rotating anyio worker threads). Cross-thread safety
+    # is provided by the AnswerCache-level RLock, not by thread affinity;
+    # CPython's bundled SQLite is serialized (sqlite3.threadsafety == 3).
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -260,15 +265,35 @@ class AnswerCache:
             raise FileNotFoundError(f"database not found: {self._db_path} (pass create=True to create it)")
         if create:
             Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        # Guards every use of the single shared connection, so the cache is
+        # correct when called from different threads of one process (r9 §A).
+        self._lock = threading.RLock()
         self._conn = _connect(self._db_path)
-        self._conn.executescript(_SCHEMA_SQL)
+        with self._lock:
+            self._conn.executescript(_SCHEMA_SQL)
 
     @property
     def conn(self) -> sqlite3.Connection:
         return self._conn
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
+
+    def probe(self) -> None:
+        """Readiness probe: real read + write-lock touch of the cache DB.
+
+        Raises ``sqlite3.Error`` when the DB cannot serve ``get``/``put``
+        (closed connection, missing schema, read-only file, busy timeout).
+        Nothing is written — the write lock is released by ``ROLLBACK``.
+        """
+        with self._lock:
+            self._conn.execute("SELECT COUNT(*) FROM packs").fetchone()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute("SELECT 1").fetchone()
+            finally:
+                self._conn.execute("ROLLBACK")
 
     def __enter__(self) -> AnswerCache:
         return self
@@ -303,7 +328,7 @@ class AnswerCache:
             norm["ttl_days"],
             json.dumps(norm["meta"], ensure_ascii=False),
         )
-        with self._conn:
+        with self._lock, self._conn:
             row = self._conn.execute("SELECT id FROM packs WHERE query_key = ?", (key,)).fetchone()
             if row is None:
                 cur = self._conn.execute(
@@ -350,37 +375,38 @@ class AnswerCache:
         to ``hits`` unless ``record_hit=False``.
         """
         key = query_key(query, scope)
-        row = self._conn.execute("SELECT * FROM packs WHERE query_key = ?", (key,)).fetchone()
-        if row is None:
-            return None
-        sources = [
-            {k: r[k] for k in _SOURCE_COLUMNS}
-            for r in self._conn.execute(
-                "SELECT url, title, quote, provider, served_by, fetched_at, trust_score"
-                " FROM pack_sources WHERE pack_id = ? ORDER BY position",
-                (row["id"],),
-            )
-        ]
-        pack = {
-            "schema": SCHEMA,
-            "query": row["query"],
-            "scope": row["scope"],
-            "mode": row["mode"],
-            "answer_markdown": row["answer_md"],
-            "sources": sources,
-            "verification": json.loads(row["verification"]),
-            "created_at": row["created_at"],
-            "ttl_days": row["ttl_days"],
-        }
-        pack.update(json.loads(row["meta"]))
-        age = _age_days(row["created_at"])
-        fresh = bool(age <= float(row["ttl_days"]))
-        if record_hit:
-            with self._conn:
-                self._conn.execute(
-                    "INSERT INTO hits(query_key, ts, source) VALUES(?,?,?)",
-                    (key, _iso_now(), source),
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM packs WHERE query_key = ?", (key,)).fetchone()
+            if row is None:
+                return None
+            sources = [
+                {k: r[k] for k in _SOURCE_COLUMNS}
+                for r in self._conn.execute(
+                    "SELECT url, title, quote, provider, served_by, fetched_at, trust_score"
+                    " FROM pack_sources WHERE pack_id = ? ORDER BY position",
+                    (row["id"],),
                 )
+            ]
+            pack = {
+                "schema": SCHEMA,
+                "query": row["query"],
+                "scope": row["scope"],
+                "mode": row["mode"],
+                "answer_markdown": row["answer_md"],
+                "sources": sources,
+                "verification": json.loads(row["verification"]),
+                "created_at": row["created_at"],
+                "ttl_days": row["ttl_days"],
+            }
+            pack.update(json.loads(row["meta"]))
+            age = _age_days(row["created_at"])
+            fresh = bool(age <= float(row["ttl_days"]))
+            if record_hit:
+                with self._conn:
+                    self._conn.execute(
+                        "INSERT INTO hits(query_key, ts, source) VALUES(?,?,?)",
+                        (key, _iso_now(), source),
+                    )
         return {"pack": pack, "fresh": fresh, "age_days": age}
 
     # ---------- maintenance ----------
@@ -401,58 +427,62 @@ class AnswerCache:
             return 0
         now = datetime.now(UTC)
         target_key = query_key(query, scope or "") if query is not None else None
-        doomed = []
-        for row in self._conn.execute("SELECT id, query_key, created_at FROM packs").fetchall():
-            if target_key is not None and row["query_key"] != target_key:
-                continue
-            if url is not None and not self._pack_has_url(row["id"], url):
-                continue
-            if older_than_days is not None and _age_days(row["created_at"], now) <= older_than_days:
-                continue
-            doomed.append(row["id"])
-        with self._conn:
-            for pack_id in doomed:
-                self._conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
+        with self._lock:
+            doomed = []
+            for row in self._conn.execute("SELECT id, query_key, created_at FROM packs").fetchall():
+                if target_key is not None and row["query_key"] != target_key:
+                    continue
+                if url is not None and not self._pack_has_url(row["id"], url):
+                    continue
+                if older_than_days is not None and _age_days(row["created_at"], now) <= older_than_days:
+                    continue
+                doomed.append(row["id"])
+            with self._conn:
+                for pack_id in doomed:
+                    self._conn.execute("DELETE FROM packs WHERE id = ?", (pack_id,))
         return len(doomed)
 
     def _pack_has_url(self, pack_id: int, url: str) -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM pack_sources WHERE pack_id = ? AND url = ? LIMIT 1", (pack_id, url)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM pack_sources WHERE pack_id = ? AND url = ? LIMIT 1", (pack_id, url)
+            ).fetchone()
         return row is not None
 
     def stats(self) -> dict:
         """Aggregate counts + oldest/newest pack timestamps."""
-        c = self._conn
-        return {
-            "packs": c.execute("SELECT COUNT(*) FROM packs").fetchone()[0],
-            "sources": c.execute("SELECT COUNT(*) FROM pack_sources").fetchone()[0],
-            "hits": c.execute("SELECT COUNT(*) FROM hits").fetchone()[0],
-            "oldest": c.execute("SELECT MIN(created_at) FROM packs").fetchone()[0],
-            "newest": c.execute("SELECT MAX(created_at) FROM packs").fetchone()[0],
-        }
+        with self._lock:
+            c = self._conn
+            return {
+                "packs": c.execute("SELECT COUNT(*) FROM packs").fetchone()[0],
+                "sources": c.execute("SELECT COUNT(*) FROM pack_sources").fetchone()[0],
+                "hits": c.execute("SELECT COUNT(*) FROM hits").fetchone()[0],
+                "oldest": c.execute("SELECT MIN(created_at) FROM packs").fetchone()[0],
+                "newest": c.execute("SELECT MAX(created_at) FROM packs").fetchone()[0],
+            }
 
     def list_packs(self) -> list[dict]:
         """One summary dict per pack, newest first."""
         out = []
-        for row in self._conn.execute("SELECT * FROM packs ORDER BY created_at DESC").fetchall():
-            age = _age_days(row["created_at"])
-            out.append(
-                {
-                    "query_key": row["query_key"],
-                    "query": row["query"],
-                    "scope": row["scope"],
-                    "mode": row["mode"],
-                    "created_at": row["created_at"],
-                    "ttl_days": row["ttl_days"],
-                    "sources": self._conn.execute(
-                        "SELECT COUNT(*) FROM pack_sources WHERE pack_id = ?", (row["id"],)
-                    ).fetchone()[0],
-                    "verified": _is_verified(json.loads(row["verification"])),
-                    "age_days": age,
-                    "fresh": bool(age <= float(row["ttl_days"])),
-                }
-            )
+        with self._lock:
+            for row in self._conn.execute("SELECT * FROM packs ORDER BY created_at DESC").fetchall():
+                age = _age_days(row["created_at"])
+                out.append(
+                    {
+                        "query_key": row["query_key"],
+                        "query": row["query"],
+                        "scope": row["scope"],
+                        "mode": row["mode"],
+                        "created_at": row["created_at"],
+                        "ttl_days": row["ttl_days"],
+                        "sources": self._conn.execute(
+                            "SELECT COUNT(*) FROM pack_sources WHERE pack_id = ?", (row["id"],)
+                        ).fetchone()[0],
+                        "verified": _is_verified(json.loads(row["verification"])),
+                        "age_days": age,
+                        "fresh": bool(age <= float(row["ttl_days"])),
+                    }
+                )
         return out
 
 

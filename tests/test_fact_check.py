@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import fact_check as fc
+import trust
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "factcheck"
 
@@ -459,3 +460,77 @@ def test_text_report_on_stdout_by_default(capsys):
     assert code == 0
     assert "coverage" in out.out
     assert "PASS" in out.out
+
+
+# ---------------------------------------------------------------------------
+# R9-W2C: Vietnamese domain tiers (mirror trust.py identically)
+# ---------------------------------------------------------------------------
+
+
+VN_PRIMARY_HOSTS = [
+    "gov.vn",
+    "chinhphu.vn",
+    "thuvienphapluat.vn",
+    "vbpl.vn",
+]
+
+VN_NEWS_HOSTS = [
+    "vnexpress.net",
+    "tuoitre.vn",
+    "thanhnien.vn",
+    "nld.com.vn",
+    "vietnamnet.vn",
+    "dantri.com.vn",
+    "laodong.vn",
+    "plo.vn",
+    "cafef.vn",
+    "vneconomy.vn",
+    "znews.vn",
+    "genk.vn",
+    "ictnews.vn",
+    "vtv.vn",
+    "vov.vn",
+]
+
+
+def _fc_score(host):
+    """Quoted-entry score (no snippet demotion) for one host, no overrides."""
+    return fc._score_entry(
+        {"url": f"https://{host}/x", "title": "t", "accessed": "d", "quotes": [{"text": "q"}]},
+        {},
+    )
+
+
+def test_vn_primary_hosts_tier_and_score():
+    for host in VN_PRIMARY_HOSTS:
+        r = _fc_score(host)
+        assert r["tier"] == "primary", host
+        assert r["score"] == 0.95, host
+        assert r["demotions"] == [], host
+
+
+def test_vn_news_hosts_tier_and_score():
+    for host in VN_NEWS_HOSTS:
+        r = _fc_score(host)
+        assert r["tier"] == "news", host
+        assert r["score"] == 0.80, host
+        assert r["demotions"] == [], host
+
+
+def test_vn_subdomain_and_www_match():
+    assert _fc_score("dichvucong.gov.vn")["tier"] == "primary"
+    assert _fc_score("www.vnexpress.net")["tier"] == "news"
+    assert _fc_score("portal.chinhphu.vn")["tier"] == "primary"
+
+
+def test_vn_tables_identical():
+    # R9-W2C contract: both _DOMAIN_TIERS tables stay identical
+    assert fc._DOMAIN_TIERS == trust._DOMAIN_TIERS
+
+
+def test_vn_parity_fact_check_trust():
+    # every new VN host resolves to the identical (tier, score) in both modules
+    for host in [*VN_PRIMARY_HOSTS, *VN_NEWS_HOSTS, "dichvucong.gov.vn"]:
+        f = _fc_score(host)
+        t = trust.score_source({"url": f"https://{host}/x"})
+        assert (f["tier"], f["score"]) == (t["tier"], t["score"]), host

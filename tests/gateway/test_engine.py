@@ -243,3 +243,81 @@ def test_engine_backend_failure_never_crashes(cfg):
     result = engine.run("anything at all")
     assert result.warnings  # failures are warnings, not exceptions
     assert result.depth in ("fast", "deep")
+
+
+# ---------------------------------------------------------------------------
+# r9 §B — public engine.backend accessor (MCP tools resolve through it)
+# ---------------------------------------------------------------------------
+
+
+def test_engine_backend_property_returns_injected(stub_engine):
+    """The public ``backend`` property returns the injected backend."""
+    assert stub_engine.backend is stub_engine._backend
+
+
+def test_engine_backend_property_lazy_builds(cfg):
+    """No injected backend -> first access resolves ``config.backend``."""
+    engine = Engine(cfg, synth=SimpleNamespace(), cache=None)
+    backend = engine.backend
+    assert isinstance(backend, StubBackend)
+    assert engine.backend is backend  # resolved once, then cached
+
+
+def test_engine_backend_property_is_read_only(stub_engine):
+    """The accessor has no setter — construction-time injection only."""
+    with pytest.raises(AttributeError):
+        stub_engine.backend = StubBackend()
+
+
+# ---------------------------------------------------------------------------
+# r9 §A — status() cache block is a REAL probe, not a presence check
+# ---------------------------------------------------------------------------
+
+
+def test_engine_status_cache_probe_ok(stub_engine):
+    status = stub_engine.status()
+    assert status["cache"] == {"ok": True}
+
+
+def test_engine_status_cache_probe_broken_reports_detail(stub_engine):
+    """A constructed-but-dead cache must report ok:false + detail."""
+    stub_engine._cache.close()  # kill the underlying connection
+    status = stub_engine.status()
+    assert status["cache"]["ok"] is False
+    assert status["cache"]["detail"]
+
+
+def test_engine_status_cache_unavailable_reports_detail(tmp_path):
+    """Cache construction failure -> ok:false + the real init error."""
+    bad_cfg = GatewayConfig(backend="stub", cache_db=str(tmp_path), repo_root=str(tmp_path))
+    engine = Engine(bad_cfg, backend=StubBackend(), synth=SimpleNamespace())
+    status = engine.status()
+    assert status["cache"]["ok"] is False
+    assert status["cache"]["detail"]  # e.g. "OperationalError: unable to open database file"
+
+
+# ---------------------------------------------------------------------------
+# r9 §C — engine builds signals without unmeasured extract chars
+# ---------------------------------------------------------------------------
+
+
+def test_engine_signals_have_unmeasured_extract_chars(stub_engine, monkeypatch):
+    """The depth decision runs before extraction -> extract_char_totals=[]."""
+    captured = []
+    import gateway.core.engine as engine_mod
+
+    real_decide = engine_mod.decide
+
+    def spy(signals):
+        captured.append(dict(signals))
+        return real_decide(signals)
+
+    monkeypatch.setattr(engine_mod, "decide", spy)
+    result = stub_engine.run("weather in Hanoi today")
+    assert captured, "auto depth must consult the policy"
+    signals = captured[0]
+    assert signals["extract_char_totals"] == []  # nothing measured yet
+    assert signals["search_result_counts"] == [len(stub_engine._backend.items[:10])]
+    # no phantom TINY reason leaks into the routed explanation
+    assert "tiny extract" not in result.reason
+    assert result.depth == "fast"

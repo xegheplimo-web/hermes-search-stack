@@ -275,6 +275,18 @@ def test_query_empty_text_rejected(store):
         query(store, "   ")
 
 
+def test_query_d_folding_accented_and_unaccented(store):
+    ingest(
+        store,
+        [{"Ten doanh nghiep": "CÔNG TY TNHH Đà Nẵng Thương Mại", "Dia chi": "1 Bạch Đằng, Hải Châu"}],
+        dataset_key="haiphong-new",
+    )
+    accented = query(store, "Đà Nẵng")
+    unaccented = query(store, "da nang")
+    assert [h["name"] for h in accented] == ["CÔNG TY TNHH Đà Nẵng Thương Mại"]
+    assert [h["name"] for h in unaccented] == ["CÔNG TY TNHH Đà Nẵng Thương Mại"]
+
+
 # ---------- list_datasets ----------
 
 

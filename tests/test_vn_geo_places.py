@@ -180,6 +180,26 @@ def test_query_text_fts(store, scan_a):
     assert names == ["Bún Chả Hương Giang"]
 
 
+def test_query_text_d_folding_accented_and_unaccented(store):
+    save_places(
+        store,
+        [
+            {
+                "source": "manual",
+                "source_id": "d-fold-001",
+                "name": "Bánh Xèo Đà Nẵng Ngon",
+                "address": "1 Bạch Đằng, Hải Châu",
+                "category": "quán ăn",
+            }
+        ],
+        source="manual",
+    )
+    accented = [r["name"] for r in query_places(store, text="Đà Nẵng")]
+    unaccented = [r["name"] for r in query_places(store, text="da nang")]
+    assert accented == ["Bánh Xèo Đà Nẵng Ngon"]
+    assert unaccented == ["Bánh Xèo Đà Nẵng Ngon"]
+
+
 def test_query_limit(store, scan_a):
     save_places(store, scan_a, source="google-maps")
     assert len(query_places(store, limit=2)) == 2

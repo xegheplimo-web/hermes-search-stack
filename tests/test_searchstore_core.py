@@ -194,6 +194,56 @@ def test_fts_vietnamese_diacritics(store):
     assert [h["doc_id"] for h in store.search("Yên")] == [did]
 
 
+# ---------- đ-folding (R9-W2B, analysis/r9-interfaces.md §D) ----------
+
+
+def test_fts_d_folding_unaccented_and_accented_match_same_docs(store):
+    did = store.ingest_document("https://ex.com/dinh", "Nghị định 123 của Chính phủ")
+    assert {h["doc_id"] for h in store.search("nghị định")} == {did}
+    assert {h["doc_id"] for h in store.search("nghi dinh")} == {did}
+
+
+def test_fts_d_folding_uppercase(store):
+    did = store.ingest_document("https://ex.com/danang", "Đà Nẵng thành phố", title="ĐÀ NẴNG")
+    assert {h["doc_id"] for h in store.search("đà nẵng")} == {did}
+    assert {h["doc_id"] for h in store.search("da nang")} == {did}
+    assert {h["doc_id"] for h in store.search("Đà Nẵng")} == {did}
+
+
+def test_fts_d_folding_in_title(store):
+    did = store.ingest_document("https://ex.com/t", "body", title="Nghị định mới")
+    assert {h["doc_id"] for h in store.search("nghị định")} == {did}
+    assert {h["doc_id"] for h in store.search("nghi dinh")} == {did}
+
+
+def test_fts_d_folding_phrase(store):
+    did = store.ingest_document("https://ex.com/p", "nghị định đường bộ")
+    assert {h["doc_id"] for h in store.search('"nghị định"')} == {did}
+    assert {h["doc_id"] for h in store.search('"nghi dinh"')} == {did}
+
+
+def test_ingest_d_folding_keeps_documents_text_canonical(store):
+    text = "Nghị định 123 — giữ nguyên đ/Đ trong documents.text"
+    did = store.ingest_document("https://ex.com/canon", text)
+    assert store.get_document(did)["text"] == text
+
+
+def test_fresh_db_fts_is_standalone(store):
+    sql = store.conn.execute("SELECT sql FROM sqlite_master WHERE name='documents_fts'").fetchone()[0]
+    assert "content='documents'" not in sql
+    assert "content_rowid" not in sql
+
+
+def test_rebuild_fts_folds_d(store):
+    d1 = store.ingest_document("https://ex.com/r1", "nghị định alpha")
+    d2 = store.ingest_document("https://ex.com/r2", "đường bộ beta")
+    assert store.rebuild_fts() == 2
+    assert {h["doc_id"] for h in store.search("nghi dinh")} == {d1}
+    assert {h["doc_id"] for h in store.search("duong")} == {d2}
+    assert {h["doc_id"] for h in store.search("nghị định")} == {d1}
+    assert {h["doc_id"] for h in store.search("đường")} == {d2}
+
+
 def test_fts_phrase_and_boolean(store):
     d1 = store.ingest_document("https://x.com/1", "the quick brown fox jumps")
     d2 = store.ingest_document("https://x.com/2", "quick fox only")

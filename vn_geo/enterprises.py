@@ -37,6 +37,7 @@ import urllib.request
 from pathlib import Path
 
 from searchstore import SearchStore, SearchStoreError
+from searchstore.store import fold_d
 
 from . import VnGeoError
 
@@ -378,7 +379,8 @@ def query(store: SearchStore, text: str, *, province: str | None = None, limit: 
         "WHERE d.format = 'enterprise' "
         "AND d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)"
     )
-    params: list = [text]
+    # Standalone đ-folding index (analysis/r9-interfaces.md §D): fold query text via searchstore.store.fold_d.
+    params: list = [fold_d(text)]
     if province is not None:
         sql += " AND d.provider = ?"
         params.append(f"ckan-{_slug(province)}")
