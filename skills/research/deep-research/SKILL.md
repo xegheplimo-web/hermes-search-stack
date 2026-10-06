@@ -1,7 +1,7 @@
 ---
 name: deep-research
 description: "Use when a query needs a long, cited, sectioned report."
-version: 1.0.0
+version: 1.1.0
 author: Hermes Agent + Teknium
 license: MIT
 platforms: [linux, macos, windows]
@@ -55,6 +55,10 @@ None beyond the standard toolset. The helper scripts are stdlib-only Python 3:
   there or use full paths) — `plan` / `fanout` / `check`; makes **no** live
   calls and never touches config.
 - `verify_deep_research.py` (repo root `C:/Users/atton/hermes-search-stack`) — mechanical C1–C9 subset on a report.
+- `trust.py` (repo root `C:/Users/atton/hermes-search-stack`) — trust-ranks ledger sources; makes no live calls.
+- `depth_policy.py` (repo root `C:/Users/atton/hermes-search-stack`) — picks fast/deep budgets from real counts; makes no live calls.
+- `fact_check.py` (repo root `C:/Users/atton/hermes-search-stack`) — verifies draft claims against ledger + trust report; makes no live calls.
+- `research_pack.py` (repo root `C:/Users/atton/hermes-search-stack`) — builds a `research_pack.v1` pack for the answer cache; makes no live calls.
 - The citation ledger is `grounded-citations`' `scripts/sources.py`
   (`$HERMES_HOME/cache/citations/ledger.json`, override with `--ledger` or
   `HERMES_CITATION_LEDGER`).
@@ -64,6 +68,18 @@ Retrieval comes from whatever is configured: `web_search` (managed Perplexity,
 ring: parallel → keenable → exa; firecrawl excluded).
 
 ## Procedure
+
+⓪ **Cache check first.** Before planning, check the honest answer cache for
+this question:
+
+```bash
+python -m searchstore.answer_cache get --query "QUESTION" [--scope S] --json
+```
+
+Exit 0 + `"fresh": true` → serve the cached `answer_markdown` + sources +
+`created_at` (say it came from cache and when; offer to refresh). Exit 0 +
+`fresh: false` → note it is stale, continue. Exit 1 → continue. Exit 2 → warn +
+continue.
 
 ① **Plan (visible, short).** Emit a plan before searching: major themes →
 `##` sections → `###` subsections, the fan-out query list (Vietnamese **and**
@@ -82,12 +98,25 @@ themes, a recent-news angle, and VI + EN queries as needed. Backend stays auto.
 python deep_research.py fanout --queries "X là gì" "X how it works" "X tin tức mới nhất"
 ```
 
+After the first fan-out round, run the depth-policy checkpoint with the real
+counts and follow its verdict:
+
+```bash
+python depth_policy.py decide --signals '<json>' [--json]
+```
+
+`--signals` carries `search_result_counts`, `extract_char_totals`, `errors`,
+and `query_markers`. `mode=deep` → raise budgets (10 queries / 15 extracts);
+`fast` → keep 6–8 / 8–12.
+
 ③ **Extract in parallel.** `web_extract` the most promising hits (8–15 pages)
 via the keyless ring; save page text to disk when evidence mode is needed.
 Prefer primary/official sources; re-extract via the rescue path on failure.
 If a page still fails (JS-heavy, blocked, paywall), load the
 `blocked-page-recovery` skill (Wayback → archive.today → Jina → browser ladder)
-instead of retrying the same URL.
+instead of retrying the same URL. If the rescue path and `blocked-page-recovery`
+still fail, skip with a note: drop the URL from citations and add a gaps bullet
+`fetch failed: <url>` — never fabricate evidence.
 
 ④ **Evidence ledger (at retrieval time, before drafting).** Reset once per
 task, then register every URL as it arrives — never from memory, never after
@@ -100,6 +129,15 @@ python "$S" add https://example.com/a --title "A"     # prints [1]
 python "$S" ingest search_results.json                # register a batch
 python "$S" quote 1 --text "exact wording" --from page1.txt   # high-stakes claims
 ```
+
+Once the ledger has the sources, trust-rank them:
+
+```bash
+python trust.py rank --sources "<LEDGER>" --out trust.json --report trust_report.json
+```
+
+(`--sources` accepts the grounded-citations ledger directly.) Prefer score ≥ 0.5
+sources when drafting; cite a < 0.5 source only with a note.
 
 ⑤ **Draft with ledger ids only.** Write cite-while-drafting per the style rules
 below; the model only ever emits integers the ledger handed it.
@@ -116,9 +154,23 @@ coverage; fix and re-run.
 ```bash
 python "$S" verify draft.md --strict --min-coverage 0.5
 python verify_deep_research.py draft.md         # mechanical structure/style
+python fact_check.py --draft draft.md --ledger "<LEDGER>" --trust trust.json --json --out fact_check.json
 ```
 
-⑧ **Honest gaps.** When sources are thin, keep a gaps section that names what is
+`fact_check.py` exit 0 = pass; fix and re-run otherwise.
+
+⑧ **Publish (only when every gate passed).** Build the verified pack, check the
+put-gate verdict, and publish it to the answer cache:
+
+```bash
+python research_pack.py build --query "..." --ledger "<LEDGER>" --trust-report trust_report.json --answer draft.md --verification fact_check.json --out pack.json
+python research_pack.py info pack.json
+python -m searchstore.answer_cache put --pack pack.json
+```
+
+A put-gate rejection means fix first — never `--force` a failed pack.
+
+⑨ **Honest gaps.** When sources are thin, keep a gaps section that names what is
 missing ("no source found for X") and mark model-knowledge claims `[unverified]`
 — never smooth over a hole or fake corroboration.
 
@@ -170,6 +222,7 @@ Adapted from the Perplexity deep-research reference (plan §2, rules R1–R22):
 | Citations | per-sentence `[n]`, ≤3/sentence, no space before bracket | ids only from the ledger; never invented |
 | Coverage gate | `verify --min-coverage 0.5`; `--evidence` for high-stakes topics | read the `info: stats:` line before fixing a threshold |
 | Runtime budget | **< 15 min** end-to-end live run | wall time is dominated by model calls, not tools |
+| Cache | check ⓪ first; publish only verified packs; ttl 14 days |
 
 ## Hard Rules
 
@@ -183,14 +236,14 @@ Verbatim from `analysis/EVIDENCE.md` §7 — proposals must not violate these:
 Plus: no verbatim copyrighted output; the report is produced in the query
 language (Vietnamese default).
 
-## Self-Check Before Sending (C1–C9)
+## Self-Check Before Sending (C1–C10)
 
 - [ ] **C1 Structure** — exactly one `#` title + summary paragraph; ≥5 `##`
   sections with informative names; `###` subsections; no skipped header levels;
   Conclusion with synthesis + next steps.
 - [ ] **C2 Sources** — ≥8 distinct sources cited in the body; `## Sources` block
   present and byte-consistent with `sources.py verify` (exit 0; `--strict` for
-  release).
+  release) and `fact_check.py` exits 0.
 - [ ] **C3 Citation style** — per-sentence `[n]`; ≤3 per sentence; each id its
   own brackets; no space before the bracket; no bare URLs in the body.
 - [ ] **C4 Prose** — no bullet/numbered lists in the body; tables for
@@ -203,6 +256,7 @@ language (Vietnamese default).
 - [ ] **C8 Runtime + politeness** — < 15 min; ≥1.5s gaps between live calls.
 - [ ] **C9 Constraints** — `web.search_backend` untouched (auto); no `ddgs`
   install; firecrawl stays `paid`; no verbatim copyrighted reproduction.
+- [ ] **C10 Cache** — verified pack built + published (or a one-line reason it was not).
 
 ## Verification
 
