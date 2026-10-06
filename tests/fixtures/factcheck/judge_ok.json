@@ -1,0 +1,18 @@
+{
+  "claims": [
+    {
+      "sentence": 0,
+      "ids": [1],
+      "verdict": "supported",
+      "quote": "vitamin D supplementation reduces fracture risk",
+      "note": "directly stated in the fact sheet"
+    },
+    {
+      "sentence": 1,
+      "ids": [2],
+      "verdict": "partially",
+      "quote": "",
+      "note": "prevalence supported; timing unstated"
+    }
+  ]
+}

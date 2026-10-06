@@ -1,0 +1,13 @@
+{
+  "name": "clean_control",
+  "description": "Every sentence cited with an evidenced quote from a primary source: expect no flags, all-supported verdicts, and fact_check exit 0.",
+  "draft": "draft_clean_control.md",
+  "ledger": "ledger_clean_control.json",
+  "judge": "judge_clean_control.json",
+  "expect": {
+    "exit_code": 0,
+    "flags_empty": true,
+    "claims_all_verdict": "supported",
+    "summary_min": {"unsupported_n": 0, "conflicting_n": 0}
+  }
+}

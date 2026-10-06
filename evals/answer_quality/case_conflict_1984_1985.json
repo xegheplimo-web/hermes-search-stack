@@ -1,0 +1,11 @@
+{
+  "name": "conflict_1984_1985",
+  "description": "One claim citing two ids whose quotes give conflicting values (1984 vs 1985): expect a claim with ids containing BOTH 1 and 2 and a conflicting verdict.",
+  "draft": "draft_conflict_1984_1985.md",
+  "ledger": "ledger_conflict_1984_1985.json",
+  "judge": "judge_conflict_1984_1985.json",
+  "expect": {
+    "exit_code": null,
+    "claim_present": [{"verdict": "conflicting", "ids_include": [1, 2]}]
+  }
+}

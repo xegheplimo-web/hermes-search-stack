@@ -1,0 +1,14 @@
+{
+  "name": "eathealthy365",
+  "description": "Health claim citing a snippet-only UGC blog: expect a snippet_only or low_trust flag for id 1, an unsupported judge verdict, and summary.unsupported_n >= 1.",
+  "draft": "draft_eathealthy365.md",
+  "ledger": "ledger_eathealthy365.json",
+  "judge": "judge_eathealthy365.json",
+  "expect": {
+    "exit_code": null,
+    "flags_empty": false,
+    "flag_present": [{"id": 1, "type_any": ["snippet_only", "low_trust"]}],
+    "claim_present": [{"verdict": "unsupported"}],
+    "summary_min": {"unsupported_n": 1}
+  }
+}

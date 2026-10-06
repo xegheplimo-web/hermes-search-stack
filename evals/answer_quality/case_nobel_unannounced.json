@@ -1,0 +1,12 @@
+{
+  "name": "nobel_unannounced",
+  "description": "Claim that a prize was already announced, citing a source whose ledger entry has no quote: expect a no_quote flag for id 1 and an unsupported judge verdict.",
+  "draft": "draft_nobel_unannounced.md",
+  "ledger": "ledger_nobel_unannounced.json",
+  "judge": "judge_nobel_unannounced.json",
+  "expect": {
+    "exit_code": null,
+    "flag_present": [{"id": 1, "type_any": ["no_quote"]}],
+    "claim_present": [{"verdict": "unsupported"}]
+  }
+}

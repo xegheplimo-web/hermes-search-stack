@@ -1,0 +1,11 @@
+{
+  "claims": [
+    {
+      "sentence": 0,
+      "ids": [1, 2],
+      "verdict": "conflicting",
+      "quote": "1984 / 1985",
+      "note": "the two sources disagree on the year"
+    }
+  ]
+}

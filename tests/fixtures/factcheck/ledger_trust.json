@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://notes.private-journal.example.net/entry",
+      "title": "Notebook entry",
+      "accessed": "2026-10-06",
+      "quotes": [{"text": "sourced from a private notebook", "added": "2026-10-06"}]
+    },
+    {
+      "id": 2,
+      "url": "https://files.private-journal.example.net/entry-copy",
+      "title": "Notebook copy",
+      "accessed": "2026-10-06",
+      "quotes": [{"text": "mirrored copy of the same note", "added": "2026-10-06"}]
+    }
+  ]
+}

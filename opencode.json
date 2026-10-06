@@ -5,6 +5,7 @@
       "C:/Users/atton/AppData/Local/hermes/hermes-agent/**": "allow",
       "C:/Users/atton/AppData/Local/hermes/installs/**": "allow",
       "C:/Users/atton/AppData/Local/hermes/skills/**": "allow",
+      "C:/Users/atton/AppData/Local/hermes/logs/**": "allow",
       "F:/CL4R1T4S/**": "allow"
     }
   }

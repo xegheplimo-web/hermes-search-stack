@@ -1,0 +1,25 @@
+{
+  "claims": [
+    {
+      "sentence": 0,
+      "ids": [1],
+      "verdict": "unsupported",
+      "quote": "",
+      "note": "cure claim absent from the source"
+    },
+    {
+      "sentence": 1,
+      "ids": [2],
+      "verdict": "supported",
+      "quote": "featured by a small wellness blog",
+      "note": "matched verbatim"
+    },
+    {
+      "sentence": 2,
+      "ids": [9],
+      "verdict": "conflicting",
+      "quote": "",
+      "note": "cited id does not exist in the ledger"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://www.nih.gov/vitamin-d-fact-sheet",
+      "title": "Vitamin D - Fact Sheet for Health Professionals",
+      "accessed": "2026-10-06",
+      "quotes": [{"text": "vitamin D supplementation reduces fracture risk", "added": "2026-10-06"}]
+    },
+    {
+      "id": 2,
+      "url": "https://www.reuters.com/health/vitamin-d-deficiency",
+      "title": "Vitamin D deficiency widespread in northern climates",
+      "accessed": "2026-10-06",
+      "quotes": [{"text": "deficiency remains widespread across northern climates", "added": "2026-10-06"}]
+    }
+  ]
+}

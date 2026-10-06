@@ -124,9 +124,9 @@
 ## 7. Roadmap ưu tiên
 
 1. ✅ **Đã xong:** quick-wins config (§5) + skill deep-research (build + verify) + acceptance run.
-2. **Ngay tiếp (miễn phí, không code):** F3-P1 — đưa `verify --min-coverage` vào checklist mặc định; thêm pointer tới `blocked-page-recovery` trong skill deep-research; dùng skill cho các câu hỏi nghiên cứu thật.
-3. **Kế (nhỏ):** P3 đổi primary model sống (1 lệnh); P5 answer-quality evals (golden set từ 3 sự cố thật); F3-P2 `fact_check.py`.
-4. **Sau (vừa):** F2-b `extract_char_limit=8000` (cần Sếp cân chất lượng); F2-c prefetch plugin; P6 verified-answer cache.
+2. ✅ **Xong (Round 2):** F3-P1 — checklist `verify --min-coverage` + pointer `blocked-page-recovery` trong skill deep-research (orchestrator tự làm).
+3. ✅ **Xong (Round 2):** P5 answer-quality evals (R2-C — runner 4/4 PASS) · F3-P2 `fact_check.py` (R2-B — 23/23 tests, exit 0/1/2 đúng contract) · F2-c prefetch plugin (R2-D + orchestrator fix — live cache HIT 0.09s).
+4. **Còn lại (vừa):** F2-b `extract_char_limit=8000` (chờ Sếp cân chất lượng); P6 verified-answer cache.
 5. **Không làm:** xem §4.
 
 ---
@@ -142,6 +142,15 @@
 | A4 authenticity | Cline | ✅ 22KB, verdict + 32 techniques | **Tự chạy lại: SHA-256 ✓ khớp tuyệt đối; git log ✓ đúng từng commit; 23/4/2025=Thứ Tư ✓** |
 | A5 setup plan | OpenCode | ❌ v1 permission wall → ✅ v2 (mở quyền opencode.json) 19.8KB | Đọc toàn bộ; rules R1–R22 quote-checked |
 | B1 build | Cline ×2 crash → Devin | ✅ `deep_research.py` + `verify_deep_research.py` + tests | Orchestrator re-run: ruff clean, pytest 51/51, smokes OK + acceptance run PASS (§6) |
+
+**Round 2 (2026-10-06) — 4 agent song song theo `analysis/round2-interfaces.md`:**
+
+| Task | Agent | Kết quả | Verify của orchestrator |
+|---|---|---|---|
+| R2-A speed audit 2 | OpenCode (muse-spark) | ✅ `analysis/speed-round2.md` + `log_latency_stats.py` | Re-run parser độc lập: số liệu khớp 100% (drift +0-2% log live); ruff clean; đã áp R2 (cap `background_review` 40k) |
+| R2-B `fact_check.py` (F3-P2) | Devin (dangerous) | ✅ 31KB + 23 tests + 11 fixtures, contract v1 | pytest 23/23 độc lập; exit 0/1/2 đúng; top imports stdlib-only; hermes imports lazy; ruff clean; chạy matrix ok/bad/trust/strict |
+| R2-C evals (P5) | Cline (longcat) | ✅ `evals/answer_quality/` 4 case + runner 192 dòng | Runner chạy độc lập: **4/4 PASS** exit 0; pytest wrapper pass |
+| R2-D prefetch plugin (F2-c) | Cline (longcat) | ⚠️ code đạt contract nhưng gate tiền đề sai → **orchestrator fix** (§2.5 interfaces) | 39/39 tests (8 test mới); `hermes plugins validate` PASS; live: STORED + **cache HIT 0.09s** (vendor parity `parallel`) |
 
 **Repo hygiene đã làm:** `.serena/` thêm vào `.gitignore`; `opencode.json` mở quyền đọc `skills/**` + `F:/CL4R1T4S/**`; SKILL.md fix path Windows + 2 fence hỏng.
 **Hard rules (EVIDENCE §7) toàn cục:** không pin backend ✓ · không cài ddgs ✓ · firecrawl giữ `paid` ✓ · nhịp ≥1.5s trong mọi thiết kế ✓.

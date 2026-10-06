@@ -1,0 +1,15 @@
+name: search-prefetch
+version: 1.0.0
+description: >-
+  Speculatively warm the web_extract disk cache for the top results of each successful
+  web_search (keyless-only, ≤2 URLs, paced ≥1.5s). post_tool_call hook; daemon thread; fail-open.
+author: hermes-search-stack
+provides_hooks:
+  - post_tool_call
+config_schema:
+  enabled:
+    type: bool
+    default: true
+    description: >-
+      Set false to disable prefetch without uninstalling the plugin. The env kill-switch
+      HERMES_SEARCH_PREFETCH=0 overrides this.

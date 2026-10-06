@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://eathealthy365.com/miracle-cure",
+      "title": "This one weird supplement cures everything",
+      "accessed": "2026-10-06",
+      "served_by": "keyless_rescue",
+      "rescued_from": "timeout"
+    },
+    {
+      "id": 2,
+      "url": "https://notes.randoblog.example.net/post/12",
+      "title": "My supplement diary",
+      "accessed": "2026-10-06",
+      "quotes": [{"text": "featured by a small wellness blog", "added": "2026-10-06"}]
+    }
+  ]
+}

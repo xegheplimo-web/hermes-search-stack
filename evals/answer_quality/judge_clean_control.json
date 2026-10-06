@@ -1,0 +1,18 @@
+{
+  "claims": [
+    {
+      "sentence": 0,
+      "ids": [1],
+      "verdict": "supported",
+      "quote": "Water boils at 100 degrees Celsius at sea level.",
+      "note": "Directly supported by the NIST source."
+    },
+    {
+      "sentence": 1,
+      "ids": [2],
+      "verdict": "supported",
+      "quote": "The freezing point of water is 0 degrees Celsius.",
+      "note": "Directly supported by the NASA source."
+    }
+  ]
+}

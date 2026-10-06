@@ -33,6 +33,10 @@ reply:
   narrative sections with a machine-checked `Sources` block.
 - Any multi-source synthesis where the user will want to verify the citations.
 
+**Session hygiene (speed):** run a research question in a fresh session (`/new`) —
+model-call latency scales with context size; and before re-running a
+near-duplicate question, `session_search` it (the honest answer cache).
+
 ## When NOT to Use
 
 Skip this mode and answer in normal chat when:
@@ -81,6 +85,9 @@ python deep_research.py fanout --queries "X là gì" "X how it works" "X tin t�
 ③ **Extract in parallel.** `web_extract` the most promising hits (8–15 pages)
 via the keyless ring; save page text to disk when evidence mode is needed.
 Prefer primary/official sources; re-extract via the rescue path on failure.
+If a page still fails (JS-heavy, blocked, paywall), load the
+`blocked-page-recovery` skill (Wayback → archive.today → Jina → browser ladder)
+instead of retrying the same URL.
 
 ④ **Evidence ledger (at retrieval time, before drafting).** Reset once per
 task, then register every URL as it arrives — never from memory, never after

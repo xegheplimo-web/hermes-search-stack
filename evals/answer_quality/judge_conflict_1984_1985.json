@@ -1,0 +1,11 @@
+{
+  "claims": [
+    {
+      "sentence": 0,
+      "ids": [1, 2],
+      "verdict": "conflicting",
+      "quote": "signed in 1984 / signed in 1985",
+      "note": "The two cited sources give conflicting signing years (1984 vs 1985)."
+    }
+  ]
+}

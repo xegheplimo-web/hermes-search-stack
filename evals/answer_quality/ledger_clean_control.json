@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://www.nist.gov/pml/water-boiling-point",
+      "title": "Boiling point of water",
+      "accessed": "2026-10-01",
+      "quotes": [
+        {"text": "Water boils at 100 degrees Celsius at sea level.", "added": "2026-10-01"}
+      ]
+    },
+    {
+      "id": 2,
+      "url": "https://www.nasa.gov/earth/water-freezing-point",
+      "title": "Freezing point of water",
+      "accessed": "2026-10-01",
+      "quotes": [
+        {"text": "The freezing point of water is 0 degrees Celsius.", "added": "2026-10-01"}
+      ]
+    }
+  ]
+}
