@@ -1,0 +1,8 @@
+# Hermes Universal Gateway — runtime dependencies.
+# Exact pins, resolved 2026-06-10 via `uv pip install` into the repo .venv
+# (Python 3.14.7). Install with:
+#   uv pip install --python .venv/Scripts/python.exe -r requirements-gateway.txt
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+mcp==2.3.0

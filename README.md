@@ -44,6 +44,36 @@ Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI pe
 Source playbook and per-source verification notes: `analysis/vn-geodata-playbook.md`,
 `analysis/vn-business-data-sources.md`. Run: `python -m vn_geo.<module> --help`.
 
+## Universal gateway (`gateway`, round 8)
+
+One model `hermes-search` over two surfaces — OpenAI-compatible HTTP and MCP
+(streamable HTTP + stdio) — on top of the existing stack (depth policy,
+SearchStore, answer cache, trust/citation glue, synthesis). Backends:
+`hermes` (sidecar bridge into the local Hermes stack; default `auto`),
+`standalone` (keyless HTTP ring), `stub`.
+
+```bash
+uv pip install -r requirements-gateway.txt          # pinned gateway deps
+.venv/Scripts/python.exe -m gateway                 # → http://127.0.0.1:8787
+.venv/Scripts/python.exe -m gateway --mcp-stdio     # MCP over stdio
+
+curl -s http://127.0.0.1:8787/healthz && curl -s http://127.0.0.1:8787/v1/models
+# chat (add "stream": true for SSE):
+curl -s http://127.0.0.1:8787/v1/chat/completions -H "Content-Type: application/json" \
+  -d '{"model":"hermes-search","messages":[{"role":"user","content":"…"}]}'
+```
+
+Config is `HERMES_GATEWAY_*` env vars (see `.env.gateway.example`); the
+synthesis LLM is config-driven (default `opencode-go` `deepseek-flash`; the
+client adds the relay's `x-opencode-session` header automatically). MCP
+streamable HTTP is served at `POST /mcp` (6 tools). Live acceptance
+2026-10-06: cited answers in ~10s, SSE deltas + `[DONE]`, MCP 6/6 tools —
+`analysis/round8-verification.md`, `evidence/r8/`.
+
+VN news ring (round 8): `python -m vn_news fetch --out news.jsonl` →
+`python -m vn_news ingest --db data/searchstore.db --file news.jsonl` →
+`python -m vn_news query "…" --days 7` (live ring verified; idempotent ingest).
+
 ## Repo layout
 
 | Path | Contents |
@@ -52,6 +82,8 @@ Source playbook and per-source verification notes: `analysis/vn-geodata-playbook
 | `test_keyless_fallback.py` | T2 keyless fallback + rescue proof (needs local Hermes env) |
 | `tests/` | Offline unit tests (run in CI) |
 | `searchstore/` | SQLite (FTS5 + vector tier) document store — content-addressed versioning, events, diff (round 3) |
+| `gateway/` | Universal gateway — OpenAI-compatible HTTP + MCP, one model `hermes-search` (round 8) |
+| `vn_news.py` | VN news RSS ring — fetch / ingest / query CLI over the store (round 8) |
 | `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill refresh, Goong client (rounds 4–5) |
 | `scripts/` | Ops scripts — weekly vn-geo refresh cron runner |
 | `fact_check.py` | Citation fact-check battery, schema `fact_check.v1` (round 2) |
@@ -126,6 +158,7 @@ Hard rules:
 - Round 5 — `vn_geo` auto-backfill refresh engine + Goong REST client with 1,000 req/day cap, no live calls for Goong (see `analysis/r5-interfaces.md`).
 - Round 6 — quality & speed wave: `searchstore/answer_cache.py`, `trust.py`, `depth_policy.py`, `scripts/scoreboard.py` (see `analysis/r6-interfaces.md`; module inventory per `analysis/r7-interfaces.md` evidence).
 - Round 7 — integration wave: `research_pack.py` glue + deep-research skill wiring (see `analysis/r7-interfaces.md`, `analysis/round7-verification.md`).
+- Round 8 — universal gateway: `gateway/` (OpenAI-compatible HTTP + MCP, one model `hermes-search`) + `vn_news.py` VN-news ring; live acceptance PASS — cited chat ~10s, SSE 155 deltas + `[DONE]`, MCP 6/6 tools, 1,285 live news records with idempotent re-ingest; full suite 723 (see `analysis/round8-verification.md`, `evidence/r8/`).
 
 ## License
 

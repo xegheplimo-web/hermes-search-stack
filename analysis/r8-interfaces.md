@@ -57,17 +57,35 @@ requirements-gateway.txt + .env.gateway.example   # R8-B
 
 ```python
 @dataclass(slots=True)
-class SearchItem:  title: str; url: str; description: str = ""; position: int = 0
+class SearchItem:
+    title: str
+    url: str
+    description: str = ""
+    position: int = 0
+
+
 @dataclass(slots=True)
-class ExtractItem: url: str; title: str = ""; content: str = ""; error: str | None = None
+class ExtractItem:
+    url: str
+    title: str = ""
+    content: str = ""
+    error: str | None = None
+
+
 @dataclass(slots=True)
-class EvidenceItem: id: int; title: str; url: str; content: str = ""
+class EvidenceItem:
+    id: int
+    title: str
+    url: str
+    content: str = ""
+
 
 class SearchBackend(Protocol):
     name: str
+
     def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]: ...
     def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]: ...
-    def ping(self) -> dict: ...        # {"ok": bool, "detail": str}
+    def ping(self) -> dict: ...  # {"ok": bool, "detail": str}
 ```
 
 All gateway core code is **synchronous**. (FastAPI runs sync handlers in a threadpool; StreamingResponse accepts sync generators.)
@@ -88,18 +106,38 @@ All gateway core code is **synchronous**. (FastAPI runs sync handlers in a threa
 
 ```python
 @dataclass(slots=True)
-class SourceRef: id: int; title: str; url: str; quote: str = ""; trust_score: float | None = None
+class SourceRef:
+    id: int
+    title: str
+    url: str
+    quote: str = ""
+    trust_score: float | None = None
+
+
 @dataclass(slots=True)
 class EngineResult:
-    answer_markdown: str; sources: list[SourceRef]; depth: str           # "cache"|"fast"|"deep"
-    cached: bool; reason: str = ""; warnings: list[str] = field(default_factory=list)
+    answer_markdown: str
+    sources: list[SourceRef]
+    depth: str  # "cache"|"fast"|"deep"
+    cached: bool
+    reason: str = ""
+    warnings: list[str] = field(default_factory=list)
     timings_ms: dict[str, int] = field(default_factory=dict)
 
+
 class Engine:
-    def __init__(self, config: GatewayConfig, *, backend: SearchBackend | None = None,
-                 synth: Synthesizer | None = None, cache: AnswerCache | None = None): ...
+    def __init__(
+        self,
+        config: GatewayConfig,
+        *,
+        backend: SearchBackend | None = None,
+        synth: Synthesizer | None = None,
+        cache: AnswerCache | None = None,
+    ): ...
     def run(self, query: str, *, depth: str = "auto", allow_cache: bool = True) -> EngineResult: ...
     def run_iter(self, query: str, *, depth: str = "auto", allow_cache: bool = True) -> Iterator[dict]: ...
+
+
 def default_engine(config: GatewayConfig) -> Engine: ...
 ```
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Báo Thanh Niên</title>
+    <link>https://thanhnien.vn</link>
+    <description>Tin tức 24h</description>
+    <item>
+      <title>Giá vàng hôm nay 6/10: Tăng vọt (bản tin nhanh)</title>
+      <link>https://vnexpress.net/gia-vang-hom-nay-6-10-tang-vot-3.rss</link>
+      <pubDate>Mon, 05 Oct 2026 22:00:00 +0700</pubDate>
+      <description><![CDATA[Bản tin nhanh của Thanh Niên về giá vàng.]]></description>
+    </item>
+    <item>
+      <title>Hơn 7.100 hộ dân Đà Nẵng sẽ được di dời khỏi vùng nguy hiểm</title>
+      <link>https://thanhnien.vn/hon-7100-ho-dan-da-nang-se-duoc-di-doi-1.htm</link>
+      <pubDate>Tue, 06 Oct 26 18:19:00 +0700</pubDate>
+      <description><![CDATA[HĐND thành phố Đà Nẵng vừa thông qua đề án sắp xếp, ổn định dân cư.]]></description>
+    </item>
+    <item>
+      <title>Bản tin không có liên kết (lỗi định dạng)</title>
+      <pubDate>Tue, 06 Oct 2026 10:00:00 +0700</pubDate>
+      <description><![CDATA[Mục này bị thiếu thẻ link nên phải bị bỏ qua, không làm hỏng cả feed.]]></description>
+    </item>
+  </channel>
+</rss>
