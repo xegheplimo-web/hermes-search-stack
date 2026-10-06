@@ -5,8 +5,10 @@ fake synthesizer) never need the dependency. ``synthesize`` returns a full
 answer string; ``stream`` yields text pieces. The prompt contract: answer in
 the query's language (Vietnamese questions get Vietnamese answers), ground
 ONLY on the supplied evidence, attach ``[n]`` citations per sentence, end with
-a ``## Sources`` list, and state insufficiency instead of inventing. HTTP or
-transport failures never raise — they map to a minimal fallback text with
+a ``## Sources`` list, and state insufficiency instead of inventing. A
+deterministic ``Current date:`` block (Asia/Ho_Chi_Minh) plus relative-date /
+staleness rules keep time-relative answers honest (R10-A). HTTP or transport
+failures never raise — they map to a minimal fallback text with
 ``last_warning`` set for the caller.
 """
 
@@ -15,10 +17,17 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 
 from gateway.protocols import EvidenceItem
 
 _FALLBACK_CHUNK = 400
+
+# Asia/Ho_Chi_Minh is fixed UTC+7 (no DST), so a constant offset keeps the
+# injected clock correct even where the IANA tz database is absent (Windows).
+_VN_TZ = timezone(timedelta(hours=7))
+
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 _SYSTEM = (
     "You are the synthesis engine of the Hermes search stack. Rules:\n"
@@ -27,6 +36,18 @@ _SYSTEM = (
     "- Attach a citation marker [n] — matching the evidence item numbers — to every sentence.\n"
     "- If the evidence is insufficient, say so plainly instead of inventing facts.\n"
     "- Finish with a '## Sources' section listing '[n] title — url' for every cited item."
+)
+
+_SYSTEM_DATE_RULES = (
+    "- Resolve every time-relative phrase in the question (e.g. 'hôm nay', 'ngày mai', 'tuần này', "
+    "'mới nhất', 'today', 'tomorrow', 'this week', 'latest') against the 'Current date' line above, "
+    "and state the resolved absolute date(s) explicitly in the answer.\n"
+    "- For dynamic data (weather, prices, news, schedules, scores…), state the as-of date or period "
+    "the evidence data refers to; when the freshest usable evidence predates the period the question "
+    "asks about, say so plainly in days (e.g. 'cập nhật gần nhất 17/09, cách đây khoảng 3 tuần').\n"
+    "- Never fabricate dates: if no evidence carries a usable date, state that limitation instead "
+    "of guessing.\n"
+    "- Do not attach dates to questions that are not time-sensitive."
 )
 
 _SYSTEM_DEEP_SUFFIX = (
@@ -43,8 +64,24 @@ def _evidence_block(evidence: list[EvidenceItem]) -> str:
     return "\n\n".join(parts) if parts else "(no evidence collected)"
 
 
-def _messages(query: str, evidence: list[EvidenceItem], deep: bool) -> list[dict]:
-    system = _SYSTEM + (_SYSTEM_DEEP_SUFFIX if deep else "\n- Keep the answer short: a few sentences.")
+def _now_line(now: datetime | None) -> str:
+    """The 'Current date' block line; injectable ``now`` for tests, else real clock."""
+    if now is None:
+        moment = datetime.now(_VN_TZ)
+    elif now.tzinfo is None:
+        moment = now.replace(tzinfo=_VN_TZ)  # naive input = already VN wall time
+    else:
+        moment = now.astimezone(_VN_TZ)
+    return f"Current date: {moment.date().isoformat()} ({_WEEKDAYS[moment.weekday()]}), Asia/Ho_Chi_Minh, UTC+7."
+
+
+def _messages(query: str, evidence: list[EvidenceItem], deep: bool, now: datetime | None = None) -> list[dict]:
+    system = (
+        _SYSTEM
+        + f"\n- {_now_line(now)}\n"
+        + _SYSTEM_DATE_RULES
+        + (_SYSTEM_DEEP_SUFFIX if deep else "\n- Keep the answer short: a few sentences.")
+    )
     user = f"Question: {query}\n\nEvidence:\n{_evidence_block(evidence)}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -104,8 +141,18 @@ class Synthesizer:
 
     # ---------- API ----------
 
-    def synthesize(self, query: str, evidence: list[EvidenceItem], *, deep: bool = False) -> str:
-        """Full non-streaming answer; falls back (never raises) on failure."""
+    def synthesize(
+        self,
+        query: str,
+        evidence: list[EvidenceItem],
+        *,
+        deep: bool = False,
+        now: datetime | None = None,
+    ) -> str:
+        """Full non-streaming answer; falls back (never raises) on failure.
+
+        ``now`` injects the 'Current date' block (tests); None = real clock.
+        """
         self.last_warning = None
         if self._client is None:
             self.last_warning = self._init_error or "synthesis client unavailable"
@@ -115,7 +162,7 @@ class Synthesizer:
                 "/chat/completions",
                 json={
                     "model": self.model,
-                    "messages": _messages(query, evidence, deep),
+                    "messages": _messages(query, evidence, deep, now),
                     "temperature": 0.2,
                     "stream": False,
                 },
@@ -132,8 +179,18 @@ class Synthesizer:
             return self._fallback(query, evidence, self.last_warning)
         return text
 
-    def stream(self, query: str, evidence: list[EvidenceItem], *, deep: bool = False) -> Iterator[str]:
-        """Yield answer pieces (SSE deltas); on failure yields the fallback text."""
+    def stream(
+        self,
+        query: str,
+        evidence: list[EvidenceItem],
+        *,
+        deep: bool = False,
+        now: datetime | None = None,
+    ) -> Iterator[str]:
+        """Yield answer pieces (SSE deltas); on failure yields the fallback text.
+
+        ``now`` injects the 'Current date' block (tests); None = real clock.
+        """
         self.last_warning = None
         if self._client is None:
             self.last_warning = self._init_error or "synthesis client unavailable"
@@ -145,7 +202,7 @@ class Synthesizer:
                 "/chat/completions",
                 json={
                     "model": self.model,
-                    "messages": _messages(query, evidence, deep),
+                    "messages": _messages(query, evidence, deep, now),
                     "temperature": 0.2,
                     "stream": True,
                 },
