@@ -13,7 +13,7 @@
 - **`searchstore` (round 3):** SQLite FTS5 (+ vector tier) document store — content-addressed versioning, events, diff; plus `searchstore/answer_cache.py` (round 6, verified-answer cache over `research_pack.v1`).
 - **`vn_geo` (rounds 4–5):** admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill `refresh` engine, Goong REST client (1,000 req/day cap; no live calls yet).
 - **Round 6 wave:** answer cache (`searchstore/answer_cache.py`), source trust scoring (`trust.py`, `trust_report.v1` + host overrides), depth-escalation policy (`depth_policy.py`, fast/deep), quality/speed scoreboard (`scripts/scoreboard.py`).
-- **Round 7 glue (in progress):** `research_pack.py` (`research_pack.v1` builder from ledger + trust report + fact_check report + draft) + deep-research skill wiring (cache-first ⓪, depth checkpoint, trust rank, verify gate, publish).
+- **Round 7 glue (shipped 2026-10-06):** `research_pack.py` (`research_pack.v1` builder from ledger + trust report + fact_check report + draft) + deep-research skill wiring (cache-first ⓪, depth checkpoint, trust rank, verify gate, publish) — acceptance E2E PASS (miss → publish → serve; `analysis/round7-verification.md`, `evidence/r7d/`).
 
 ## Environment (verified)
 - HERMES_HOME: `C:/Users/atton/AppData/Local/hermes`
@@ -60,7 +60,7 @@ Escalate to Devin ONLY IF: (a) a task fails its acceptance criteria after ONE fi
 - 2026-10-06 — **Round 4:** `vn_geo` kit foundations — `admin_units.py`, `overpass_poi.py`, `places.py`, VN business-data sources doc (see `analysis/r4-interfaces.md`; CKAN enterprises per git log `dbedc40`).
 - 2026-10-06 — **Round 5:** `vn_geo` auto-backfill `refresh.py` (coverage + dedup run; re-run adds 0 rows) + `goong.py` REST client with hard local 1,000 req/day cap, no live calls (see `analysis/r5-interfaces.md`).
 - 2026-10-06 — **Round 6:** quality & speed wave — `searchstore/answer_cache.py`, `trust.py` (`trust_report.v1` + host overrides), `depth_policy.py` (fast/deep table), `scripts/scoreboard.py`; repo gates green per `analysis/r7-interfaces.md` evidence (see `analysis/r6-interfaces.md`).
-- 2026-10-06 — **R7 in progress — integration wave: research_pack.py + deep-research skill wiring; acceptance pending** (frozen contract: `analysis/r7-interfaces.md`).
+- 2026-10-06 — **R7 shipped — integration wave: research_pack.py + deep-research skill wiring; acceptance E2E PASS (cache miss → publish → serve)** (frozen contract: `analysis/r7-interfaces.md`; verification: `analysis/round7-verification.md`).
 - Active venv path CHANGES when Hermes repairs/rebuilds environments — always resolve the current one with `hermes doctor | grep "Runtime venv"`. Last verified: `.../environments/c31a367ff6674cb9b9a80fcf6e6c96a0/venv`.
 
 ## Deliverables

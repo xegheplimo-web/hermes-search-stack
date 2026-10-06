@@ -57,7 +57,7 @@ Source playbook and per-source verification notes: `analysis/vn-geodata-playbook
 | `fact_check.py` | Citation fact-check battery, schema `fact_check.v1` (round 2) |
 | `trust.py` | Source trust scoring, `trust_report.v1` + host overrides (round 6) |
 | `depth_policy.py` | Depth-escalation policy, fast/deep decision table (round 6) |
-| `research_pack.py` | `research_pack.v1` builder glue (round 7, in progress) |
+| `research_pack.py` | `research_pack.v1` builder glue (round 7) |
 | `deep_research.py` | Deep-research workflow helper, plan / fanout / check |
 | `verify_deep_research.py` | Deep-research acceptance checks (mechanical C1–C9 subset) |
 | `evals/` | Offline evals, incl. answer-quality battery runner + cases/ledgers/judges (round 2) |
@@ -125,7 +125,7 @@ Hard rules:
 - Round 4 — `vn_geo` kit foundations: admin units, OSM POI, places scan/diff, CKAN enterprises groundwork (see `analysis/r4-interfaces.md`).
 - Round 5 — `vn_geo` auto-backfill refresh engine + Goong REST client with 1,000 req/day cap, no live calls for Goong (see `analysis/r5-interfaces.md`).
 - Round 6 — quality & speed wave: `searchstore/answer_cache.py`, `trust.py`, `depth_policy.py`, `scripts/scoreboard.py` (see `analysis/r6-interfaces.md`; module inventory per `analysis/r7-interfaces.md` evidence).
-- Round 7 — integration wave, in progress: research_pack.py + deep-research skill wiring (see `analysis/r7-interfaces.md`).
+- Round 7 — integration wave: `research_pack.py` glue + deep-research skill wiring (see `analysis/r7-interfaces.md`, `analysis/round7-verification.md`).
 
 ## License
 
