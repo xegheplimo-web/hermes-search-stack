@@ -118,4 +118,53 @@ python -c "import json;rows=[json.loads(l) for l in open('evals/r9/corpus_v0.jso
 git status --short
 # expected: only evals/r9/ additions, i.e.
 #  ?? evals/r9/
+
+## 6. Runner (`run_corpus.py`, R10-C)
+
+Runs the corpus against the read-only gateway and emits battery-compatible
+artifacts under `results/` so `scripts/scoreboard.py` math applies.
+
+```bash
+# smoke (3 probes, no holdout)
+python evals/r9/run_corpus.py --limit 3 --sleep 2
+
+# wave baseline: default splits (regression + challenge, holdout excluded)
+python evals/r9/run_corpus.py --sleep 2
+
+# variants / holdout / filtering
+python evals/r9/run_corpus.py --variants --sleep 2
+python evals/r9/run_corpus.py --include-holdout --sleep 2
+python evals/r9/run_corpus.py --ids vn-001,vn-003 --sleep 1
+
+# offline check-logic validation (no HTTP)
+python evals/r9/run_corpus.py --dry-run --limit 3 --json
+```
+
+Flags: `--split` (default `regression,challenge`), `--include-holdout`,
+`--ids`, `--limit`, `--variants`, `--sleep` (default 2.0, minimum 1.0),
+`--gateway` (default `http://127.0.0.1:8787`), `--out-dir` (default
+`results/`), `--dry-run`, `--json` (prints the output JSON path).
+
+Splits (frozen, see `splits.json`): holdout = ids where `int(id[3:]) % 10 == 5`
+(`vn-005, vn-015, vn-025, vn-035, vn-045`), excluded unless
+`--include-holdout`; challenge = `difficulty == "hard"` minus holdout;
+regression = the rest.
+
+Outputs: `results/r10_corpus_<ts>.json` (battery-compatible:
+`{generated, run_command_*, live_calls, cases[{id,kind,input,pass,latency_s,
+notes,error}], totals{pass,fail,total,elapsed_s}}`; corpus cases use
+`kind: "corpus"` plus `signals` + `judge_pending`) and
+`results/r10_corpus_<ts>.md` (per-difficulty / per-domain tables, latency
+p50/p90 via `nearest_rank_percentile`, failure / judge-pending / stale
+lists).
+
+Checks are signals, not scores: `citations_present`, `sources_section_present`,
+`source_domains`, `required_fields` heuristics (`answer`, `citations`,
+`as_of`, `price`, `unit`, `address`, `opening_hours`, `legal_basis` — anything
+else is `judge-pending`), `must_include`/`must_not_include` normalized
+substring match (casefold + whitespace collapse, diacritics preserved;
+unmatched semantics → `judge-pending`, never a fabricated verdict), and a
+freshness signal for `dynamic` ground truth. Stale dynamic cases are reported
+separately and never counted as fail. `scoreboard.py` discovers
+`r10_corpus_*.json` with the same math.
 ```

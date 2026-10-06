@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """scoreboard.py -- quality/speed scoreboard for the Hermes web-layer batteries.
 
-Reads ``results/battery_*.json`` and ``results/keyless_*.json`` (the newest
-``--last N`` of each, default 5), aggregates per-run quality and speed
+Reads ``results/battery_*.json``, ``results/keyless_*.json`` and
+``results/r10_corpus_*.json`` (the newest ``--last N`` of each, default 5), aggregates per-run quality and speed
 statistics, compares the latest run against the previous
 ``results/scoreboard.json`` for a trend, and writes
 ``analysis/scoreboard.md`` + ``results/scoreboard.json``.
@@ -41,6 +41,7 @@ DEFAULT_LAST = 5
 
 BATTERY_GLOB = "battery_*.json"
 KEYLESS_GLOB = "keyless_*.json"
+CORPUS_GLOB = "r10_corpus_*.json"
 SCOREBOARD_NAME = "scoreboard.json"
 
 # Float-dust guard for the nearest-rank ceil: a product that should be an
@@ -173,6 +174,21 @@ def parse_keyless_run(path: Path | str) -> dict:
     return run
 
 
+def parse_corpus_run(path: Path | str) -> dict:
+    """Parse one ``r10_corpus_*.json`` run file.
+
+    Corpus files use the battery-compatible shape (kind ``corpus`` plus a
+    ``signals`` dict per case), so the SAME totals/percentile math applies.
+    Files that do not fit warn-and-skip via the shared ``_base_run`` guard.
+    """
+    path = Path(path)
+    run, cases = _base_run(path)
+    kinds = sorted({case.get("kind") for case in cases if isinstance(case.get("kind"), str)})
+    run["kinds"] = {kind: _kind_stats(cases, kind) for kind in kinds}
+    run["backends"] = _backends_seen(cases)
+    return run
+
+
 def discover_runs(results_dir: Path | str, last: int) -> tuple[list[Path], list[Path]]:
     """Find battery/keyless run files, sorted oldest-to-newest by name,
     keeping only the newest ``last`` of each."""
@@ -183,6 +199,15 @@ def discover_runs(results_dir: Path | str, last: int) -> tuple[list[Path], list[
         batteries = batteries[-last:]
         keyless = keyless[-last:]
     return batteries, keyless
+
+
+def discover_corpus_runs(results_dir: Path | str, last: int) -> list[Path]:
+    """Find ``r10_corpus_*.json`` run files, oldest-to-newest, newest ``last``."""
+    results_dir = Path(results_dir)
+    corpus = sorted(results_dir.glob(CORPUS_GLOB), key=lambda p: p.name)
+    if last:
+        corpus = corpus[-last:]
+    return corpus
 
 
 def load_runs(results_dir: Path | str, last: int) -> tuple[list[dict], list[dict]]:
@@ -200,6 +225,12 @@ def load_runs(results_dir: Path | str, last: int) -> tuple[list[dict], list[dict
             keyless.append(parse_keyless_run(path))
         except ValueError as exc:
             _warn(str(exc))
+    for path in discover_corpus_runs(results_dir, last):
+        try:
+            batteries.append(parse_corpus_run(path))
+        except ValueError as exc:
+            _warn(str(exc))
+    batteries.sort(key=lambda run: run.get("file", ""))
     return batteries, keyless
 
 
