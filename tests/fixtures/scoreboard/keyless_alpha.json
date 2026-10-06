@@ -1,0 +1,25 @@
+{
+  "generated": "2026-10-01T01:00:00",
+  "run_command": "pytest test_keyless_fallback.py",
+  "live_calls": 4,
+  "live_call_cap": 12,
+  "cases": [
+    {
+      "id": "K1",
+      "pass": true,
+      "fn_used": "plugins.web.ddgs.provider.DDGSWebSearchProvider.search",
+      "calls": 1,
+      "error": null,
+      "notes": "ddgs tier unavailable as documented"
+    },
+    {
+      "id": "K2",
+      "pass": true,
+      "fn_used": "plugins.web.keyless_mcp.parallel_search_keyless",
+      "calls": 1,
+      "error": null,
+      "notes": "n_results=3"
+    }
+  ],
+  "totals": {"pass": 2, "fail": 0, "total": 2}
+}

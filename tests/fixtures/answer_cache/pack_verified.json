@@ -1,0 +1,49 @@
+{
+  "schema": "research_pack.v1",
+  "query": "What is the capital of Vietnam?",
+  "scope": "",
+  "mode": "deep",
+  "answer_markdown": "The capital of Vietnam is Hanoi [1]. It has been the political center since 1010 [2].",
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Hanoi",
+      "title": "Hanoi",
+      "quote": "Hanoi is the capital and second-most populous city of Vietnam.",
+      "provider": "tavily",
+      "served_by": null,
+      "fetched_at": "2026-10-05T09:00:00+07:00",
+      "trust_score": 0.55
+    },
+    {
+      "url": "https://www.britannica.com/place/Hanoi",
+      "title": "Hanoi | Britannica",
+      "quote": "Hanoi, city, capital of Vietnam.",
+      "provider": "tavily",
+      "served_by": null,
+      "fetched_at": "2026-10-05T09:00:05+07:00",
+      "trust_score": 0.55
+    }
+  ],
+  "verification": {
+    "fact_check_exit": 0,
+    "coverage": 0.95,
+    "min_coverage": 0.5,
+    "verified_at": "2026-10-05T09:10:00+07:00"
+  },
+  "created_at": "2026-10-05T09:10:00+07:00",
+  "ttl_days": 14,
+  "trust_report": {
+    "version": 1,
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Hanoi",
+        "host": "en.wikipedia.org",
+        "score": 0.55,
+        "tier": "aggregator",
+        "reasons": [],
+        "inputs": {"served_by": null, "snippet_only": false, "backend_error": false}
+      }
+    ],
+    "summary": {"n": 2, "mean_score": 0.55}
+  }
+}

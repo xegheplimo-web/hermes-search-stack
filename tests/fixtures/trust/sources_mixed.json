@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "url": "https://www.nist.gov/pml/water-boiling-point",
+      "title": "Boiling point of water",
+      "served_by": null,
+      "snippet_only": false,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 4200
+    },
+    {
+      "url": "https://www.nasa.gov/earth/water-freezing-point",
+      "title": "Freezing point of water",
+      "served_by": null,
+      "snippet_only": false,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 3800
+    },
+    {
+      "url": "https://www.reuters.com/health/vitamin-d-deficiency",
+      "title": "Vitamin D deficiency widespread in northern climates",
+      "served_by": null,
+      "snippet_only": false,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 5100
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Vitamin_D",
+      "title": "Vitamin D",
+      "served_by": null,
+      "snippet_only": false,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 12000
+    },
+    {
+      "url": "https://notes.private-journal.example.net/entry",
+      "title": "Notebook entry",
+      "served_by": null,
+      "snippet_only": false,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 900
+    },
+    {
+      "url": "http://eathealthy365.blogspot.com/lemon-water-miracle",
+      "title": "Lemon Water Miracle Morning Detox",
+      "served_by": "search-snippet",
+      "snippet_only": true,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 0
+    },
+    {
+      "url": "https://www.theguardian.com/science/vitamin-d",
+      "title": "Vitamin D study coverage",
+      "served_by": "rescued_from",
+      "snippet_only": false,
+      "backend_error": false,
+      "fetched_at": "2026-10-01",
+      "char_count": 2600
+    },
+    {
+      "url": "https://www.bbc.com/news/health-backend-fail",
+      "title": "Page served after backend failure",
+      "served_by": null,
+      "snippet_only": false,
+      "backend_error": true,
+      "fetched_at": "2026-10-01",
+      "char_count": 0
+    }
+  ]
+}

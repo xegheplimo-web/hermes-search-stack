@@ -1,0 +1,42 @@
+{
+  "generated": "2026-10-02T00:00:00",
+  "run_command_bash": "verify_web_stack.py",
+  "run_command_powershell": "verify_web_stack.py",
+  "live_calls": 5,
+  "cases": [
+    {
+      "id": "S1",
+      "kind": "search",
+      "input": "capital of Australia population 2026",
+      "pass": true,
+      "latency_s": 2.0,
+      "n_results": 4,
+      "backends": ["managed"],
+      "error": null,
+      "notes": "EN factual"
+    },
+    {
+      "id": "S2",
+      "kind": "search",
+      "input": "DeepSeek V4 release",
+      "pass": false,
+      "latency_s": 3.0,
+      "n_results": 0,
+      "backends": ["managed"],
+      "error": "search backend returned no results",
+      "notes": "EN product"
+    },
+    {
+      "id": "E1",
+      "kind": "extract",
+      "input": "https://a.example/page",
+      "pass": true,
+      "latency_s": 1.0,
+      "chars": 1200,
+      "backends": ["keyless"],
+      "error": null,
+      "notes": ""
+    }
+  ],
+  "totals": {"pass": 2, "fail": 1, "total": 3, "elapsed_s": 6.0}
+}

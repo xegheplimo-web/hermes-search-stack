@@ -1,0 +1,33 @@
+{
+  "generated": "2026-10-02T01:00:00",
+  "run_command": "pytest test_keyless_fallback.py",
+  "live_calls": 6,
+  "live_call_cap": 12,
+  "cases": [
+    {
+      "id": "K1",
+      "pass": true,
+      "fn_used": "plugins.web.ddgs.provider.DDGSWebSearchProvider.search",
+      "calls": 1,
+      "error": null,
+      "notes": "ddgs tier unavailable as documented"
+    },
+    {
+      "id": "K2",
+      "pass": false,
+      "fn_used": "plugins.web.keyless_mcp.parallel_search_keyless",
+      "calls": 1,
+      "error": "Keyless Parallel search failed: rate limit",
+      "notes": "FAIL: success!=true or <1 result."
+    },
+    {
+      "id": "K3",
+      "pass": true,
+      "fn_used": "tools.web_tools._rescue_search",
+      "calls": 1,
+      "error": null,
+      "notes": "CALLED ok: success=true"
+    }
+  ],
+  "totals": {"pass": 2, "fail": 1, "total": 3}
+}

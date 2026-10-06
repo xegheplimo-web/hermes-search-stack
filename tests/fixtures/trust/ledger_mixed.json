@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://www.nist.gov/pml/water-boiling-point",
+      "title": "Boiling point of water",
+      "accessed": "2026-10-01",
+      "quotes": [
+        {"text": "Water boils at 100 degrees Celsius at sea level.", "added": "2026-10-01"}
+      ]
+    },
+    {
+      "id": 2,
+      "url": "https://notes.private-journal.example.net/entry",
+      "title": "Notebook entry",
+      "accessed": "2026-10-01",
+      "snippet_only": true,
+      "served_by": "search-snippet",
+      "quotes": []
+    },
+    {
+      "id": 3,
+      "url": "https://www.theguardian.com/science/vitamin-d",
+      "title": "Vitamin D study coverage",
+      "accessed": "2026-10-01",
+      "quotes": [
+        {"text": "Vitamin D supplementation shows mixed results.", "added": "2026-10-01"}
+      ]
+    }
+  ]
+}

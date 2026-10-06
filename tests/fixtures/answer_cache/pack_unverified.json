@@ -1,0 +1,26 @@
+{
+  "schema": "research_pack.v1",
+  "query": "Does coffee cause insomnia?",
+  "scope": "",
+  "mode": "fast",
+  "answer_markdown": "Coffee can delay sleep onset [1], but the evidence is thin.",
+  "sources": [
+    {
+      "url": "https://example-blog.invalid/coffee-sleep",
+      "title": "Coffee and sleep",
+      "quote": null,
+      "provider": "tavily",
+      "served_by": "rescued_from",
+      "fetched_at": null,
+      "trust_score": 0.12
+    }
+  ],
+  "verification": {
+    "fact_check_exit": 1,
+    "coverage": 0.2,
+    "min_coverage": 0.5,
+    "verified_at": "2026-10-05T12:00:00+07:00"
+  },
+  "created_at": "2026-10-05T12:00:00+07:00",
+  "ttl_days": 14
+}

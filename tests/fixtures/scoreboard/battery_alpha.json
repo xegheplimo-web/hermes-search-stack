@@ -1,0 +1,86 @@
+{
+  "generated": "2026-10-01T00:00:00",
+  "run_command_bash": "verify_web_stack.py",
+  "run_command_powershell": "verify_web_stack.py",
+  "live_calls": 6,
+  "cases": [
+    {
+      "id": "S1",
+      "kind": "search",
+      "input": "capital of Australia population 2026",
+      "pass": true,
+      "latency_s": 1.0,
+      "n_results": 3,
+      "backends": ["managed"],
+      "error": null,
+      "notes": "EN factual"
+    },
+    {
+      "id": "S2",
+      "kind": "search",
+      "input": "AI news October 2026",
+      "pass": true,
+      "latency_s": 2.0,
+      "n_results": 4,
+      "backends": ["managed", "perplexity"],
+      "error": null,
+      "notes": "EN recency"
+    },
+    {
+      "id": "S3",
+      "kind": "search",
+      "input": "gia vang SJC hom nay",
+      "pass": true,
+      "latency_s": 3.0,
+      "n_results": 5,
+      "backends": ["searxng"],
+      "error": null,
+      "notes": "VI"
+    },
+    {
+      "id": "S4",
+      "kind": "search",
+      "input": "Nous Research Hermes Agent web search",
+      "pass": true,
+      "latency_s": 4.0,
+      "n_results": 6,
+      "backends": ["perplexity"],
+      "error": null,
+      "notes": "EN project"
+    },
+    {
+      "id": "E1",
+      "kind": "extract",
+      "input": "https://a.example/page",
+      "pass": true,
+      "latency_s": 0.5,
+      "chars": 1500,
+      "backends": ["keyless"],
+      "error": null,
+      "notes": ""
+    },
+    {
+      "id": "E2",
+      "kind": "extract",
+      "input": "https://b.example/page",
+      "pass": true,
+      "latency_s": 1.5,
+      "chars": 2000,
+      "backends": ["firecrawl", "keyless"],
+      "error": null,
+      "notes": ""
+    },
+    {
+      "id": "E3",
+      "kind": "extract",
+      "input": "https://c.example/page",
+      "pass": true,
+      "latency_s": 2.5,
+      "chars": 900,
+      "backends": ["keenable"],
+      "error": null,
+      "notes": ""
+    }
+  ],
+  "totals": {"pass": 7, "fail": 0, "total": 7, "elapsed_s": 12.5}
+}
