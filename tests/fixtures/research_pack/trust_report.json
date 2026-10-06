@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "url": "https://www.nih.gov/vitamin-d-fact-sheet",
+      "host": "nih.gov",
+      "score": 0.95,
+      "tier": "primary",
+      "reasons": [],
+      "inputs": {"served_by": null, "snippet_only": false, "backend_error": false}
+    },
+    {
+      "url": "https://www.reuters.com/health/vitamin-d-deficiency/",
+      "host": "reuters.com",
+      "score": 0.7,
+      "tier": "news",
+      "reasons": ["snippet_only"],
+      "inputs": {"served_by": "archive", "snippet_only": true, "backend_error": false}
+    },
+    {
+      "url": "https://www.theguardian.com/science/vitamin-d",
+      "host": "theguardian.com",
+      "score": 0.65,
+      "tier": "news",
+      "reasons": ["rescued_from"],
+      "inputs": {"served_by": "rescued_from", "snippet_only": false, "backend_error": false}
+    },
+    {
+      "url": "https://notes.private-journal.example.net/entry",
+      "host": "notes.private-journal.example.net",
+      "score": 0.25,
+      "tier": "unknown",
+      "reasons": ["unknown_host"],
+      "inputs": {"served_by": null, "snippet_only": true, "backend_error": false}
+    }
+  ],
+  "summary": {"n": 4, "mean_score": 0.64}
+}

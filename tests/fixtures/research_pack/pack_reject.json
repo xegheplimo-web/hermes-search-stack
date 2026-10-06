@@ -1,0 +1,20 @@
+{
+  "schema": "research_pack.v1",
+  "query": "unverified query",
+  "scope": "",
+  "mode": "deep",
+  "answer_markdown": null,
+  "sources": [
+    {
+      "url": "https://example.org/x",
+      "title": null,
+      "quote": null,
+      "provider": null,
+      "served_by": null,
+      "fetched_at": "2026-10-01",
+      "trust_score": null
+    }
+  ],
+  "created_at": "2026-10-06T09:00:00+00:00",
+  "ttl_days": 14
+}

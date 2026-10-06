@@ -1,0 +1,23 @@
+{
+  "schema": "fact_check.v1",
+  "draft": "tests/fixtures/research_pack/draft.md",
+  "ledger": "tests/fixtures/research_pack/ledger_ok.json",
+  "stats": {
+    "sentences": 5,
+    "cited_sentences": 1,
+    "citations": 1,
+    "unique_ids": 1,
+    "coverage": 0.2
+  },
+  "flags": [
+    {"type": "missing_id", "id": 7, "sentence": 4, "detail": "cited id not present in the ledger"}
+  ],
+  "claims": [
+    {"sentence": 0, "ids": [1], "verdict": "not_judged", "quote": "", "note": ""}
+  ],
+  "trust": {
+    "1": {"tier": "primary", "score": 0.95, "demotions": []}
+  },
+  "judge": {"mode": "off", "status": "skipped", "verdicts_n": 0},
+  "summary": {"pass": false, "flags_n": 1, "unsupported_n": 0, "conflicting_n": 0}
+}

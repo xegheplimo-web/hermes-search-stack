@@ -1,0 +1,22 @@
+{
+  "schema": "fact_check.v1",
+  "draft": "tests/fixtures/research_pack/draft.md",
+  "ledger": "tests/fixtures/research_pack/ledger_ok.json",
+  "stats": {
+    "sentences": 4,
+    "cited_sentences": 3,
+    "citations": 3,
+    "unique_ids": 2,
+    "coverage": 0.75
+  },
+  "flags": [],
+  "claims": [
+    {"sentence": 0, "ids": [1], "verdict": "not_judged", "quote": "", "note": ""}
+  ],
+  "trust": {
+    "1": {"tier": "primary", "score": 0.95, "demotions": []},
+    "2": {"tier": "news", "score": 0.8, "demotions": []}
+  },
+  "judge": {"mode": "off", "status": "skipped", "verdicts_n": 0},
+  "summary": {"pass": true, "flags_n": 0, "unsupported_n": 0, "conflicting_n": 0}
+}

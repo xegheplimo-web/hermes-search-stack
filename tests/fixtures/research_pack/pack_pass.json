@@ -1,0 +1,35 @@
+{
+  "schema": "research_pack.v1",
+  "query": "what is vitamin D?",
+  "scope": "",
+  "mode": "deep",
+  "answer_markdown": "Vitamin D is a secosteroid [1].",
+  "sources": [
+    {
+      "url": "https://www.nih.gov/vitamin-d-fact-sheet",
+      "title": "Vitamin D Fact Sheet",
+      "quote": "vitamin D reduces fracture risk",
+      "provider": null,
+      "served_by": null,
+      "fetched_at": "2026-10-06",
+      "trust_score": 0.95
+    },
+    {
+      "url": "https://www.reuters.com/health/vitamin-d-deficiency",
+      "title": "Reuters on deficiency",
+      "quote": "deficiency remains widespread",
+      "provider": null,
+      "served_by": "archive",
+      "fetched_at": "2026-10-05",
+      "trust_score": 0.7
+    }
+  ],
+  "verification": {
+    "fact_check_exit": 0,
+    "coverage": 0.75,
+    "min_coverage": 0.5,
+    "verified_at": "2026-10-06T09:00:00+00:00"
+  },
+  "created_at": "2026-10-06T09:00:00+00:00",
+  "ttl_days": 14
+}

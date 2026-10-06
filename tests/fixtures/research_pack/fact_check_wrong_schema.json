@@ -1,0 +1,5 @@
+{
+  "schema": "fact_check.v2",
+  "stats": {"coverage": 0.9},
+  "summary": {"pass": true}
+}

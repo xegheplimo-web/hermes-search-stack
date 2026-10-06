@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://www.theguardian.com/science/vitamin-d",
+      "title": "Guardian coverage",
+      "accessed": "2026-10-04",
+      "served_by": "search-snippet",
+      "quotes": [{"text": "mixed results in trials", "added": "2026-10-04"}]
+    },
+    {
+      "id": 2,
+      "title": "No URL at all",
+      "accessed": "2026-10-04"
+    },
+    {
+      "id": 3,
+      "url": "https://notes.private-journal.example.net/entry#top",
+      "accessed": "2026-10-03",
+      "served_by": "extract"
+    },
+    {
+      "id": 4,
+      "url": "https://example.org/only-ledger",
+      "title": "Ledger-only source",
+      "accessed": "2026-10-02",
+      "served_by": "cache"
+    }
+  ]
+}
