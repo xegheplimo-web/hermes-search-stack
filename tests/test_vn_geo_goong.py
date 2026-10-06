@@ -573,7 +573,7 @@ def test_cli_usage_records_via_state_path(tmp_path, capsys):
     """usage --state-path reads the persisted counter."""
     state = tmp_path / "usage.json"
     limiter = DailyLimiter(state_path=state, daily_limit=1000)
-    limiter.record(today="2026-10-06")
+    limiter.record()  # real "today" — the CLI usage command reads the real date too
     rc = goong.main(["usage", "--state-path", str(state), "--json"])
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
