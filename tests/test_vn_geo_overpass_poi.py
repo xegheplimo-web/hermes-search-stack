@@ -84,6 +84,23 @@ def test_fetch_mirror_fallback_on_429(monkeypatch):
     assert calls == ["https://m1.example/x", "https://m2.example/x"]
 
 
+def test_fetch_retries_transient_failure(monkeypatch):
+    calls: list[str] = []
+    good = {"elements": []}
+
+    def fake_urlopen(request, timeout=None):
+        url = request.full_url
+        calls.append(url)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(url, 504, "Gateway Timeout", {}, None)
+        return _FakeResponse(json.dumps(good).encode())
+
+    monkeypatch.setattr(overpass_poi.urllib.request, "urlopen", fake_urlopen)
+    out = fetch("q", mirrors=["https://m1.example/x"], attempts=2, backoff=0.0)
+    assert out == good
+    assert calls == ["https://m1.example/x", "https://m1.example/x"]
+
+
 def test_fetch_all_mirrors_fail(monkeypatch):
     def fake_urlopen(request, timeout=None):
         raise urllib.error.URLError("boom")

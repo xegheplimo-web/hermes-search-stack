@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,6 +16,10 @@ from pathlib import Path
 
 from vn_geo import VnGeoError
 
+# Order = preference. de is currently the only reliably working public mirror
+# (2026-10-06: osm.ch returns EMPTY payloads — dangerous, do not use; osm.jp
+# TLS broken; kumi / private.coffee / openstreetmap.ru unreachable), so fetch()
+# also retries transient failures per mirror (refresh.py passes attempts=2).
 MIRRORS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -67,42 +72,60 @@ def build_query(south: float, west: float, north: float, east: float, categories
     return f"[out:json][timeout:60];(\n{body}\n);out center tags;"
 
 
-def fetch(query: str, *, mirrors: list[str] | None = None, timeout: float = 60.0) -> dict:
-    """POST the query to an Overpass mirror, falling back on failure."""
+def fetch(
+    query: str,
+    *,
+    mirrors: list[str] | None = None,
+    timeout: float = 90.0,
+    attempts: int = 1,
+    backoff: float = 5.0,
+) -> dict:
+    """POST the query to an Overpass mirror, retrying and falling back on failure.
+
+    Each mirror is tried up to ``attempts`` times for transient failures
+    (HTTP errors, timeouts, network errors), sleeping ``backoff`` seconds
+    between attempts on the same mirror. JSON problems skip to the next mirror.
+    """
     targets = list(mirrors) if mirrors else list(MIRRORS)
     if not targets:
         raise VnGeoError("no Overpass mirrors to try (mirrors list is empty)")
+    if attempts < 1:
+        raise VnGeoError(f"attempts must be >= 1, got {attempts!r}")
     errors: list[str] = []
     for mirror in targets:
-        try:
-            body = urllib.parse.urlencode({"data": query}).encode("utf-8")
-            request = urllib.request.Request(
-                mirror,
-                data=body,
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-            )
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310 - URL is a module-level https constant
-                raw = response.read().decode("utf-8")
+        for attempt in range(1, attempts + 1):
+            suffix = f" (attempt {attempt}/{attempts})" if attempts > 1 else ""
             try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                errors.append(f"{mirror}: invalid JSON ({exc})")
-                continue
-            if not isinstance(payload, dict):
-                errors.append(f"{mirror}: unexpected response (not a JSON object)")
-                continue
-            return payload
-        except urllib.error.HTTPError as exc:
-            errors.append(f"{mirror}: HTTP {exc.code} {exc.reason}")
-        except urllib.error.URLError as exc:
-            errors.append(f"{mirror}: URL error ({exc.reason})")
-        except TimeoutError as exc:
-            errors.append(f"{mirror}: timeout ({exc})")
-        except OSError as exc:
-            errors.append(f"{mirror}: network error ({exc})")
+                body = urllib.parse.urlencode({"data": query}).encode("utf-8")
+                request = urllib.request.Request(
+                    mirror,
+                    data=body,
+                    headers={
+                        "User-Agent": USER_AGENT,
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310 - URL is a module-level https constant
+                    raw = response.read().decode("utf-8")
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    errors.append(f"{mirror}{suffix}: invalid JSON ({exc})")
+                    break
+                if not isinstance(payload, dict):
+                    errors.append(f"{mirror}{suffix}: unexpected response (not a JSON object)")
+                    break
+                return payload
+            except urllib.error.HTTPError as exc:
+                errors.append(f"{mirror}{suffix}: HTTP {exc.code} {exc.reason}")
+            except urllib.error.URLError as exc:
+                errors.append(f"{mirror}{suffix}: URL error ({exc.reason})")
+            except TimeoutError as exc:
+                errors.append(f"{mirror}{suffix}: timeout ({exc})")
+            except OSError as exc:
+                errors.append(f"{mirror}{suffix}: network error ({exc})")
+            if attempt < attempts:
+                time.sleep(backoff)
     raise VnGeoError(f"all Overpass mirrors failed: {'; '.join(errors)}")
 
 

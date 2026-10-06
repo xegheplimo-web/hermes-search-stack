@@ -202,7 +202,7 @@ def _ckan_error_message(body: bytes) -> str | None:
 # --------------------------------------------------------------------------- fetch
 
 
-def fetch_dataset(key: str, *, timeout: float = 30.0, page_size: int = 1000) -> list[dict]:
+def fetch_dataset(key: str, *, timeout: float = 60.0, page_size: int = 1000) -> list[dict]:
     """Fetch every record of a CKAN datastore resource, following offsets.
 
     Raises :class:`VnGeoError` for unknown keys, CKAN ``success: false``

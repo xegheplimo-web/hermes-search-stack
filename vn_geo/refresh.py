@@ -280,7 +280,7 @@ def _run_step(store: SearchStore, step: dict, before_fetch) -> dict:
         south, west, north, east = step["bbox"]
         query = overpass_poi.build_query(south, west, north, east, step["categories"])
         before_fetch()
-        records = overpass_poi.normalize(overpass_poi.fetch(query))
+        records = overpass_poi.normalize(overpass_poi.fetch(query, attempts=2))
         counts = _dedup_counts(store, overpass_poi.records_to_documents(records))
         overpass_poi.ingest(store, records)
         return counts
