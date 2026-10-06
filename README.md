@@ -54,6 +54,13 @@ Source playbook and per-source verification notes: `analysis/vn-geodata-playbook
 | `searchstore/` | SQLite (FTS5 + vector tier) document store — content-addressed versioning, events, diff (round 3) |
 | `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill refresh, Goong client (rounds 4–5) |
 | `scripts/` | Ops scripts — weekly vn-geo refresh cron runner |
+| `fact_check.py` | Citation fact-check battery, schema `fact_check.v1` (round 2) |
+| `trust.py` | Source trust scoring, `trust_report.v1` + host overrides (round 6) |
+| `depth_policy.py` | Depth-escalation policy, fast/deep decision table (round 6) |
+| `research_pack.py` | `research_pack.v1` builder glue (round 7, in progress) |
+| `deep_research.py` | Deep-research workflow helper, plan / fanout / check |
+| `verify_deep_research.py` | Deep-research acceptance checks (mechanical C1–C9 subset) |
+| `evals/` | Offline evals, incl. answer-quality battery runner + cases/ledgers/judges (round 2) |
 | `analysis/` | Design docs, frozen interfaces, VN data-source playbook |
 | `references/` | API dumps / introspection helpers used during development |
 | `evidence/` | Committed battery outputs (JSON/MD/logs) |
@@ -109,6 +116,16 @@ Hard rules:
    breaks `web_extract` (search-only backend).
 3. **Firecrawl free tier stays pinned to `paid`** (`web.provider_tier.firecrawl`) —
    its keyless endpoint returns 403, so it must stay out of the free ring.
+
+## Round history
+
+- Round 1 — initial T1/T2 verification toolkit + deep-research skill and analysis pack (see `SPEC.md`, `REPORT.md`).
+- Round 2 — speed audit #2, `fact_check.py` (`fact_check.v1`), answer-quality evals (4/4 PASS), search-prefetch plugin; full suite 114/114 (see `analysis/round2-verification.md`).
+- Round 3 — `searchstore` v1 storage layer; full suite 222 passed; bandit B608 fix + `searchstore/` security scope; numpy/sqlite-vec vector-tier upgrade (see `analysis/round3-verification.md`).
+- Round 4 — `vn_geo` kit foundations: admin units, OSM POI, places scan/diff, CKAN enterprises groundwork (see `analysis/r4-interfaces.md`).
+- Round 5 — `vn_geo` auto-backfill refresh engine + Goong REST client with 1,000 req/day cap, no live calls for Goong (see `analysis/r5-interfaces.md`).
+- Round 6 — quality & speed wave: `searchstore/answer_cache.py`, `trust.py`, `depth_policy.py`, `scripts/scoreboard.py` (see `analysis/r6-interfaces.md`; module inventory per `analysis/r7-interfaces.md` evidence).
+- Round 7 — integration wave, in progress: research_pack.py + deep-research skill wiring (see `analysis/r7-interfaces.md`).
 
 ## License
 
