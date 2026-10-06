@@ -1,0 +1,26 @@
+TASK: R13-B — masothue + CKAN connectors (Yên Dũng seed evidence)
+AGENT: Cline (medium)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, worktree branch r13-b (YOU ARE HERE, this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r13-interfaces.md §1/§3 (FROZEN contract — implement `fetch(area, politeness_s=2.0) -> list[dict]` emitting §1-shaped dicts), analysis/r13-candidate-plan.md §3, analysis/vn-business-data-sources.md (masothue listing structure + robots notes), analysis/vn-geodata-playbook.md, vn_geo/enterprises.py (CKAN pattern to reuse).
+
+SCOPE: write ONLY:
+- vn_geo/connectors_masothue.py — polite crawler of masothue.com LISTING indexes (search/list URLs by province + keyword); robots-ok paths only, NEVER /Ajax/*; ≥2 s between HTTP calls; parse server-rendered tables + JSON-LD (name, address, tax_code, ward/province).
+- vn_geo/connectors_ckan_ext.py — extend the HP/Tây Ninh CKAN pattern (reuse vn_geo/enterprises.py client structure) to areas listed in data/refresh-areas.json.
+- agent_logs/r13b_seed_evidence.json — the Yên Dũng-area seed output actually fetched (source, source_id, name, address, raw) — REAL fetched records; if a source is unreachable, record the failure evidence, never invent.
+- tests/test_connectors_masothue.py, tests/test_connectors_ckan_ext.py — hermetic (fixture HTML from a saved sample, saved under tests/fixtures/r13b/ — save ONE real sample page per connector fetched politely during development).
+
+HARD RULES:
+- STOP exploring — WRITE the deliverables now; refine after. Target: first artifact write within 15 min.
+- Never invent a record. If masothue or CKAN throttles/unreachable → fetch the other; record evidence for failures.
+- HTTP via stdlib urllib or httpx (check dev venv); no new installs.
+- fold_d on name/address before emitting (searchstore.store.fold_d).
+
+ACCEPTANCE:
+1. connectors fetch real data for one area (Yên Dũng/Bắc Giang preferred; fallback = any testable province in refresh-areas.json) with ≥2 s politeness; seed evidence JSON written with real records.
+2. Hermetic tests pass + existing suite unbroken; ruff check . + ruff format --check . clean.
+3. fetch() output shape matches interfaces §1 (orchestrator greps field names).
+VERIFY: orchestrator re-runs pytest, ruff, inspect seed evidence JSON for real-ness (source_url spot-check), confirm no /Ajax/* path in code.
+CONSTRAINTS: politeness ≥2 s between live calls; ≤30 live listing-page fetches total; don't touch business.py/categories.py/__main__.py (other tasks); no commits.
+
+SELF-REPORT: write agent_logs/r13b_result.json {task, files_created, records_fetched_by_source, failures, acceptance_selfcheck}.

@@ -1,0 +1,27 @@
+TASK: R13-E — gosom/google-maps-scraper adapter + seed-run evidence
+AGENT: Cline (medium)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, worktree branch r13-e. Orchestrator owns ALL git operations — NEVER commit/push. Docker capability check performed by orchestrator BEFORE dispatch; docker on path is a precondition (if `docker version` fails in your shell, STOP and self-report blocked — do not install).
+Read first (read-only): analysis/r13-interfaces.md §1/§3, analysis/r13-gmaps-scraper-analysis.md §3A (mapping table), README notes below.
+
+GOSOM RUNBOOK (orchestrator-approved invocations):
+- Queries file: agent_logs/r13e_queries.txt — one query per line, format "nhà nghỉ at Yên Dũng, Bắc Giang" etc (write it yourself from refresh-areas + word list below).
+- Word list (VN store kinds): nhà nghỉ, quán ăn, cửa hàng tạp hóa, quán cà phê, cửa hàng điện thoại, thẩm mỹ viện, phòng khám.
+- Docker run (playwright-cache volume may not exist; create named volume):
+  docker run -v gmaps-playwright-cache:/opt -v "$PWD/agent_logs:/out" -v "$PWD/agent_logs/r13e_queries.txt:/queries.txt:ro" gosom/google-maps-scraper -input /queries.txt -json -results /out/r13e_gmaps.jsonl -lang vi -depth 2 -c 2 -exit-on-inactivity 3m -zoom 15 (add -geo/-radius only if bbox unsupported by query text)
+- DISABLE_TELEMETRY=1 in the docker run environment (-e flag).
+
+SCOPE: write ONLY:
+- vn_geo/connectors_gosom.py — reads gosom JSON/JSONL output → yield interface-§1-shaped dicts: title→name, category→category_raw, address→address_text, phone, website, latitude/longitude, place_id AND cid→source_id (prefer place_id; cid secondary), status→status; source='gmaps'; source_url = listing link; fold_d on name/address; rating/review_count passthrough.
+- agent_logs/r13e_gmaps.jsonl — the actual scrape output (real evidence; if docker blocked/failed → write failure evidence with `docker version` output).
+- tests/test_connectors_gosom.py — hermetic: fixture = first 3 REAL lines of the scrape output saved to tests/fixtures/r13e/sample.jsonl (copy 3 lines only); plus synthetic-status cases (closed, missing fields).
+
+HARD RULES: STOP exploring — WRITE first. Politeness: gosom handles its own pacing; keep -c 2; NEVER raise depth/concurrency beyond runbook. Runtime budget: scrape ≤20 min; if longer, kill via your own timeout handling and use partial output (it appends places incrementally).
+ACCEPTANCE:
+1. Docker image runs; r13e_gmaps.jsonl has ≥5 real Yên Dũng-area records (or documented failure evidence).
+2. connectors_gosom.fetch-style parse of that output → schema-conform dicts (orchestrator spot-checks field names vs interfaces §1).
+3. Hermetic tests + full suite pass; ruff clean (check + format).
+VERIFY: orchestrator re-runs pytest, validates sample.jsonl against real scrape, greps mapping fields.
+CONSTRAINTS: no installs; don't touch connectors_masothue*/connectors_ckan_ext*/business.py; no commits.
+
+SELF-REPORT: write agent_logs/r13e_result.json {task, files_created, records_scraped, docker_state, acceptance_selfcheck}.

@@ -1,0 +1,21 @@
+TASK: R13-C — CLI glue + user guide + refresh-areas extension
+AGENT: OpenCode (light)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, worktree branch r13-c (YOU ARE HERE, this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r13-interfaces.md §4 (FROZEN CLI contract), analysis/r13-candidate-plan.md, vn_geo/__main__.py + vn_geo/places.py (existing CLI registration pattern to copy).
+
+SCOPE: write ONLY:
+- vn_geo/__main__.py — ADD subcommand group `business` with: `business seed --config analysis/refresh-areas.json --db data/vn-geo.db`, `business query "TEXT" --area X [--category Y]`, `business diff --db ...`, `business classify-rev --db ...`. Import vn_geo.business lazily inside the handler (module may not exist yet — guard ImportError with a clean "run r13-a first" message; do NOT stub the module).
+- analysis/r13-user-guide.md — usage guide: seed/query/classify-rev/cron, category table reference, freshness gate explanation, politeness rules.
+- analysis/refresh-areas.json — add `"business_enabled": false` default flag at top level (Hermes flips it post-acceptance); do not alter area entries.
+
+HARD RULES: STOP exploring — WRITE now. Argparse style must match existing __main__.py conventions. No new deps.
+
+ACCEPTANCE:
+1. `python -m vn_geo business --help` shows subcommands; `business query --help` shows --area/--category.
+2. With vn_geo.business absent, `business query` prints the clean guidance message and exits 1 (not traceback).
+3. ruff check . + ruff format --check . clean; existing suite unbroken.
+VERIFY: orchestrator runs the 3 commands above + ruff + pytest.
+CONSTRAINTS: don't touch connectors_*/business.py/categories.py; no commits; no live calls.
+
+SELF-REPORT: write agent_logs/r13c_result.json {task, files_created, acceptance_selfcheck}.

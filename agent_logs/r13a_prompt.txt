@@ -1,0 +1,30 @@
+TASK: R13-A — vn_geo business pipeline core (schema + normalize + geocode chain + dedupe/upsert + classify + query)
+AGENT: Devin (hard)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, worktree branch r13-a (YOU ARE HERE, this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r13-interfaces.md (FROZEN contract — your code MUST match §2 entity schema + §3 signatures exactly), analysis/r13-candidate-plan.md §3/§4, analysis/r13-gmaps-scraper-analysis.md §3B, analysis/vn-business-data-sources.md, searchstore/store.py, vn_geo/ (existing modules: admin_units.py, places.py, overpass_poi.py, goong.py).
+
+SCOPE: write ONLY:
+- vn_geo/business.py (normalize, geocode, upsert_entity, query_entities, diff_events — exact signatures from interfaces §3)
+- vn_geo/categories.py + data/categories.yaml (classify, load_rules)
+- searchstore/store.py (APPEND entity helper functions only — do not modify existing functions except adding an import-safe hook; run full existing test suite after)
+- tests/test_business.py, tests/test_categories.py
+
+HARD RULES:
+- FTS must use searchstore.store.fold_d (đ/Đ→d pre-folded into index — raw MATCH with accents returns 0 hits; see R9-W2B).
+- Geocode chain: (1) vn_geo.goong if API key configured (it is NOT yet active — code the branch, test with stub), (2) OSM/Nominatim https://nominatim.openstreetmap.org with User-Agent header, ≥1.5s politeness, (3) null lat/lng → geocode_status 'approximate'.
+- No live masothue/CKAN calls (those are R13-B); hermetic tests with stubs offline.
+- Storage: single-file SQLite via searchstore (data/vn-geo.db target path parameterized, NOT hardcoded).
+- No invented data; tests may use synthetic fixtures.
+
+ACCEPTANCE:
+1. pytest: new tests pass + existing suite unbroken (pytest -o addopts="" -q).
+2. ruff check . and ruff format --check . clean (format your new files with ruff format).
+3. classify("Nhà nghỉ Bảo An","") and classify("Cơm tấm 286","") → correct canonical cat per data/categories.yaml rules, fold_d applied (no-accent keywords also match).
+4. upsert_entity twice on same input → same entity_id, +0 duplicate rows; diff_events reports 1 new event on first, 0 on second.
+5. query_entities("nha nghi", "Yên Dũng") works with fold_d-folding regardless of accent input.
+
+VERIFY (orchestrator runs): pytest suite; ruff; grep fold_d usage; upsert idempotency re-run; query timing.
+CONSTRAINTS: no installs (stdlib + existing deps only: ruff/pytest/pyyaml/sqlite3 stdlib; yaml available in dev venv), no commits, no live calls beyond nominatim if a test wants one (prefer stubs), don't touch other tasks' files (connectors_*, __main__.py, refresh-areas.json).
+
+SELF-REPORT: when done, write agent_logs/r13a_result.json {task, files_created, tests_summary, acceptance_selfcheck, notes}.

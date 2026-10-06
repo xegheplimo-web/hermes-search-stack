@@ -1,0 +1,3 @@
+TASK: R13-A — vn_geo business pipeline core — RESCUE BRIEF for orchestration escalation
+This file is the escalation rescue brief placeholder per skill lead-orchestrator §12.
+After R13-A reaches Devin worktree, agent_logs/r13a_postmortem gets appended here on escalate.
