@@ -116,6 +116,7 @@ class SearchStore:
             Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = db.connect(self._db_path)
         db.migrate(self._conn)
+        ensure_entity_schema(self._conn)  # R13-A hook: entities view on every DB
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -388,3 +389,406 @@ class SearchStore:
 
     def similar(self, vector: list[float], *, k: int = 10) -> list[dict]:
         return _load_vectors().similar(self._conn, vector, k=k)
+
+
+# ===========================================================================
+# Entity helpers — appended for R13-A (analysis/r13-interfaces.md §2).
+#
+# Entities are ordinary documents: format="entity", provider=entity source,
+# title=name, meta=the full entity schema v1 dict (JSON). The ``entities``
+# view exposes the schema fields as columns over documents_current. Dedupe
+# rules per §2: exact on (source, source_id) / deterministic entity_id, then
+# fuzzy name+address token overlap >= 0.8. All FTS goes through fold_d
+# (R9-W2B). vn_geo.business wraps these helpers behind db_path signatures.
+# ===========================================================================
+
+ENTITY_FORMAT = "entity"
+ENTITY_URL_PREFIX = "vn://entity/"
+ENTITY_DIFF_WATERMARK_KEY = "entity_diff_watermark"
+ENTITY_FUZZY_THRESHOLD = 0.8
+ENTITY_DEFAULT_TTL_CLASS = "poi"
+
+# ttl_class -> seconds before checked_at goes stale (freshness gate,
+# analysis/r13-interfaces.md §5: stale rows are flagged, never silently served).
+ENTITY_TTL_SECONDS = {
+    "poi": 7 * 86400,
+    "poi_strict": 3 * 86400,
+    "registry": 30 * 86400,
+    "dynamic": 3600,
+}
+
+# Content fields compared on re-upsert to decide "changed". Bookkeeping fields
+# (entity_id, first_seen, last_seen, checked_at, raw, sources, geocode_source)
+# are excluded — they never make a new version by themselves.
+ENTITY_DIFF_FIELDS = (
+    "name",
+    "kind",
+    "category",
+    "category_raw",
+    "cat_confidence",
+    "tax_code",
+    "address_text",
+    "area_old",
+    "province",
+    "lat",
+    "lng",
+    "phone",
+    "website",
+    "source_url",
+    "source_id",
+    "status",
+    "rating",
+    "review_count",
+    "geocode_status",
+    "ttl_class",
+    "confidence",
+)
+
+_ENTITIES_VIEW_SQL = """\
+CREATE VIEW IF NOT EXISTS entities AS
+SELECT
+  d.id          AS doc_id,
+  d.url         AS url,
+  d.title       AS title,
+  d.provider    AS provider,
+  d.fetched_at  AS fetched_at,
+  json_extract(d.meta, '$.entity_id')      AS entity_id,
+  json_extract(d.meta, '$.name')           AS name,
+  json_extract(d.meta, '$.kind')           AS kind,
+  json_extract(d.meta, '$.category')       AS category,
+  json_extract(d.meta, '$.category_raw')   AS category_raw,
+  json_extract(d.meta, '$.cat_confidence') AS cat_confidence,
+  json_extract(d.meta, '$.tax_code')       AS tax_code,
+  json_extract(d.meta, '$.address_text')   AS address_text,
+  json_extract(d.meta, '$.area_old')       AS area_old,
+  json_extract(d.meta, '$.province')       AS province,
+  json_extract(d.meta, '$.lat')            AS lat,
+  json_extract(d.meta, '$.lng')            AS lng,
+  json_extract(d.meta, '$.phone')          AS phone,
+  json_extract(d.meta, '$.website')        AS website,
+  json_extract(d.meta, '$.source_url')     AS source_url,
+  json_extract(d.meta, '$.source_id')      AS source_id,
+  json_extract(d.meta, '$.status')         AS status,
+  json_extract(d.meta, '$.rating')         AS rating,
+  json_extract(d.meta, '$.review_count')   AS review_count,
+  json_extract(d.meta, '$.first_seen')     AS first_seen,
+  json_extract(d.meta, '$.last_seen')      AS last_seen,
+  json_extract(d.meta, '$.checked_at')     AS checked_at,
+  json_extract(d.meta, '$.ttl_class')      AS ttl_class,
+  json_extract(d.meta, '$.confidence')     AS confidence,
+  json_extract(d.meta, '$.geocode_status') AS geocode_status,
+  json_extract(d.meta, '$.geocode_source') AS geocode_source,
+  d.meta        AS meta
+FROM documents_current d
+WHERE d.format = 'entity'
+"""
+
+_ENTITY_FTS_SQL = """\
+SELECT d.meta AS meta
+FROM documents_fts
+JOIN documents_current d ON d.id = documents_fts.rowid
+WHERE documents_fts MATCH ? AND d.format = 'entity'
+ORDER BY bm25(documents_fts)
+"""
+
+_ENTITY_ALL_SQL = "SELECT meta FROM documents_current WHERE format = 'entity' ORDER BY title"
+
+_TOKEN_RE = re.compile(r"[0-9a-z]+")
+
+
+def ensure_entity_schema(conn: sqlite3.Connection) -> None:
+    """Create the ``entities`` view when absent. Idempotent; called from
+    ``SearchStore.__init__`` (import-safe hook) and again inside the entity
+    helpers so direct-connection callers are covered too."""
+    conn.execute(_ENTITIES_VIEW_SQL)
+
+
+def _entity_fold(text: str) -> str:
+    """Unaccent fold for dedupe tokens: đ/Đ -> d, diacritic strip, casefold,
+    whitespace collapse (superset of _fold_d)."""
+    import unicodedata
+
+    s = _fold_d(str(text))
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).casefold().strip()
+
+
+def entity_id_for(
+    source: str,
+    source_id: str | None = None,
+    name: str | None = None,
+    address: str | None = None,
+) -> str:
+    """Deterministic ``e_<sha1_12>`` id (§2): ``source|source_id`` when a
+    source id exists, else ``source|folded name|folded address``."""
+    src = _entity_fold(source)
+    sid = _entity_fold(source_id or "")
+    if sid:
+        basis = f"{src}|{sid}"
+    else:
+        basis = f"{src}|{_entity_fold(name or '')}|{_entity_fold(address or '')}"
+    return "e_" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:12]
+
+
+def entity_token_overlap(a: str, b: str) -> float:
+    """Jaccard overlap of folded token sets; §2 fuzzy-dedupe metric."""
+    ta = set(_TOKEN_RE.findall(_entity_fold(a)))
+    tb = set(_TOKEN_RE.findall(_entity_fold(b)))
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def _entity_doc_url(entity_id: str) -> str:
+    return ENTITY_URL_PREFIX + entity_id
+
+
+def _entity_doc_text(entity: dict) -> str:
+    """Searchable text for an entity doc: name/categories/address/contact."""
+    parts = [
+        str(entity.get(k) or "").strip()
+        for k in ("name", "category_raw", "category", "address_text", "area_old", "province", "phone", "tax_code")
+    ]
+    parts = [p for p in parts if p]
+    return (". ".join(parts) + ".") if parts else ""
+
+
+def _entity_meta(row) -> dict | None:
+    try:
+        meta = json.loads(row["meta"] or "{}")
+    except json.JSONDecodeError:
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def _iter_entity_docs(conn: sqlite3.Connection):
+    for row in conn.execute("SELECT id, meta FROM documents_current WHERE format = ?", (ENTITY_FORMAT,)):
+        meta = _entity_meta(row)
+        if meta is not None:
+            yield row["id"], meta
+
+
+def find_entity(conn: sqlite3.Connection, entity: dict) -> tuple[int, dict] | None:
+    """Locate the current doc matching *entity* per §2 dedupe rules.
+
+    Exact wins: identical entity_id, or identical (source, source_id) with a
+    non-empty source_id. Otherwise fuzzy name+address token overlap >= 0.8,
+    best score wins. Returns ``(doc_id, meta)`` or None.
+    """
+    entity_id = str(entity.get("entity_id") or "")
+    source = str(entity.get("source") or "")
+    source_id = str(entity.get("source_id") or "")
+    docs = list(_iter_entity_docs(conn))
+    for doc_id, meta in docs:
+        if entity_id and str(meta.get("entity_id") or "") == entity_id:
+            return doc_id, meta
+        if source_id and meta.get("source") == source and str(meta.get("source_id") or "") == source_id:
+            return doc_id, meta
+    target = f"{entity.get('name') or ''} {entity.get('address_text') or ''}"
+    best: tuple[int, dict] | None = None
+    best_score = 0.0
+    for doc_id, meta in docs:
+        score = entity_token_overlap(target, f"{meta.get('name') or ''} {meta.get('address_text') or ''}")
+        if score >= ENTITY_FUZZY_THRESHOLD and (best is None or score > best_score):
+            best = (doc_id, meta)
+            best_score = score
+    return best
+
+
+def _merge_entity_sources(meta: dict, entity: dict) -> list[str]:
+    seen: list[str] = []
+    for s in (meta.get("source"), entity.get("source"), *(meta.get("sources") or [])):
+        if s and s not in seen:
+            seen.append(str(s))
+    return seen
+
+
+def entity_upsert(store: SearchStore, entity: dict) -> str:
+    """Dedupe-upsert an entity schema v1 dict into *store*; return entity_id.
+
+    - No match  -> insert doc (``vn://entity/<id>``) + ``entity_new`` event.
+    - Match + changed content fields -> new document version (append-only) +
+      ``entity_changed`` event, or ``entity_closed`` when status transitioned
+      to closed. first_seen is kept; last_seen/checked_at are bumped.
+    - Match + no content change -> last_seen/checked_at bumped in place on the
+      current row (+0 duplicate rows, no event).
+    Incoming ``None``/``""`` values never downgrade existing fields.
+    """
+    conn = store.conn
+    ensure_entity_schema(conn)
+    ent = dict(entity)
+    source = str(ent.get("source") or "").strip()
+    if not source:
+        raise SearchStoreError("entity_upsert: entity['source'] is required")
+    name = str(ent.get("name") or "").strip()
+    if not name:
+        raise SearchStoreError("entity_upsert: entity['name'] is required")
+    if not str(ent.get("entity_id") or "").strip():
+        ent["entity_id"] = entity_id_for(
+            source, str(ent.get("source_id") or ""), name, str(ent.get("address_text") or "")
+        )
+    now = _iso_now()
+    for field in ("first_seen", "last_seen", "checked_at"):
+        if not ent.get(field):
+            ent[field] = now
+    hit = find_entity(conn, ent)
+    if hit is None:
+        ent.setdefault("sources", [source])
+        store.ingest_document(
+            _entity_doc_url(ent["entity_id"]),
+            _entity_doc_text(ent),
+            title=name,
+            provider=source,
+            format=ENTITY_FORMAT,
+            meta=ent,
+        )
+        store.record_event("entity_new", {"entity_id": ent["entity_id"], "name": name, "source": source})
+        return str(ent["entity_id"])
+
+    doc_id, meta = hit
+    entity_id = str(meta.get("entity_id") or ent["entity_id"])
+    merged = dict(meta)
+    changes: dict[str, list] = {}
+    for field in ENTITY_DIFF_FIELDS:
+        new_v = ent.get(field)
+        if new_v is None or new_v == "":
+            continue
+        if new_v != meta.get(field):
+            changes[field] = [meta.get(field), new_v]
+            merged[field] = new_v
+    if ent.get("raw") is not None:
+        merged["raw"] = ent["raw"]
+    merged["entity_id"] = entity_id
+    merged["first_seen"] = meta.get("first_seen") or ent.get("first_seen") or now
+    merged["last_seen"] = now
+    merged["checked_at"] = now
+    merged["sources"] = _merge_entity_sources(meta, ent)
+    if not changes:
+        with conn:
+            conn.execute("UPDATE documents SET meta = ? WHERE id = ?", (_json(merged), doc_id))
+        return entity_id
+    store.ingest_document(
+        _entity_doc_url(entity_id),
+        _entity_doc_text(merged),
+        title=str(merged.get("name") or name),
+        provider=str(meta.get("source") or source),
+        format=ENTITY_FORMAT,
+        meta=merged,
+    )
+    kind = "entity_closed" if merged.get("status") == "closed" and meta.get("status") != "closed" else "entity_changed"
+    store.record_event(
+        kind,
+        {"entity_id": entity_id, "name": merged.get("name"), "source": merged.get("source"), "changes": changes},
+    )
+    return entity_id
+
+
+def _entity_area_match(meta: dict, area_q: str) -> bool:
+    if not area_q:
+        return True
+    hay = _entity_fold(" ".join(str(meta.get(k) or "") for k in ("address_text", "area_old", "province")))
+    return _entity_fold(area_q) in hay
+
+
+def _entity_category_match(meta: dict, cat_q: str) -> bool:
+    if not cat_q:
+        return True
+    q = _entity_fold(cat_q)
+    cat = _entity_fold(meta.get("category") or "")
+    kind = _entity_fold(meta.get("kind") or "")
+    raw = _entity_fold(meta.get("category_raw") or "")
+    return q == cat or (q and cat.startswith(q)) or q == kind or (q and q in raw)
+
+
+def _entity_is_stale(meta: dict, *, now: datetime | None = None) -> bool:
+    """Freshness gate (§5): checked_at older than ttl_class -> stale."""
+    ttl = ENTITY_TTL_SECONDS.get(
+        str(meta.get("ttl_class") or ENTITY_DEFAULT_TTL_CLASS), ENTITY_TTL_SECONDS[ENTITY_DEFAULT_TTL_CLASS]
+    )
+    checked = str(meta.get("checked_at") or "").strip()
+    try:
+        checked_dt = datetime.fromisoformat(checked)
+    except ValueError:
+        return True
+    if checked_dt.tzinfo is None:
+        checked_dt = checked_dt.astimezone()
+    now = now or datetime.now().astimezone()
+    return (now - checked_dt).total_seconds() > ttl
+
+
+def entity_query(
+    conn: sqlite3.Connection,
+    text: str = "",
+    *,
+    area: str = "",
+    category: str = "",
+    limit: int = 20,
+) -> list[dict]:
+    """FTS + meta-filter entity query; returns entity meta dicts.
+
+    *text* is folded through ``fold_d`` before MATCH (R9-W2B hard rule: the
+    index pre-folds đ/Đ -> d, so an unfolded accented query can return 0
+    hits). *area* is an unaccent-folded substring match over
+    address_text/area_old/province; *category* matches the canonical cat,
+    its kind, or the raw category. Every result carries a ``stale`` flag
+    (freshness gate — stale rows are flagged, never silently dropped).
+    """
+    ensure_entity_schema(conn)
+    text = str(text or "").strip()
+    if text:
+        # Standalone đ-folding index (analysis/r9-interfaces.md §D): fold query text via fold_d.
+        try:
+            rows = conn.execute(_ENTITY_FTS_SQL, (_fold_d(text),)).fetchall()
+        except sqlite3.Error as e:
+            raise SearchStoreError(f"invalid entity query text {text!r}: {e}") from e
+    else:
+        rows = conn.execute(_ENTITY_ALL_SQL).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        meta = _entity_meta(row)
+        if meta is None:
+            continue
+        if not _entity_area_match(meta, str(area or "")):
+            continue
+        if not _entity_category_match(meta, str(category or "")):
+            continue
+        meta["stale"] = _entity_is_stale(meta)
+        out.append(meta)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def entity_events(conn: sqlite3.Connection) -> list[dict]:
+    """Entity diff events (``entity_*`` kinds) since the previous call.
+
+    A ``kv`` watermark tracks consumption: each call returns the
+    new/closed/changed events recorded since the last one and advances the
+    watermark, so an identical re-run reports zero new events (§3
+    ``diff_events``).
+    """
+    row = conn.execute("SELECT value FROM kv WHERE key = ?", (ENTITY_DIFF_WATERMARK_KEY,)).fetchone()
+    watermark = 0
+    if row is not None:
+        try:
+            watermark = int(row["value"])
+        except (TypeError, ValueError):
+            watermark = 0
+    rows = conn.execute(
+        "SELECT id, ts, kind, payload FROM events WHERE kind GLOB 'entity_*' AND id > ? ORDER BY id",
+        (watermark,),
+    ).fetchall()
+    events: list[dict] = []
+    for r in rows:
+        try:
+            payload = json.loads(r["payload"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        events.append({"id": r["id"], "ts": r["ts"], "kind": r["kind"], **payload})
+    if rows:
+        with conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)",
+                (ENTITY_DIFF_WATERMARK_KEY, str(rows[-1]["id"])),
+            )
+    return events
