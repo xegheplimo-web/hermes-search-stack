@@ -1,43 +1,44 @@
 # Hermes web-layer scoreboard
 
-Source: `C:\Users\atton\hermes-search-stack\results` — 5 battery run(s), 5 keyless run(s) in window.
+Source: `C:\Users\atton\hermes-search-stack\results` — 9 battery run(s), 5 keyless run(s) in window.
 
 ## Latest battery run
 
-`battery_20261006_175403.json` — generated `2026-10-06T17:54:03` · live calls 9 · pass 9 / fail 0 / total 9 · elapsed 28.73s
+`r10_corpus_control_20261006_191047.json` — generated `2026-10-06T18:54:35+00:00` · live calls 45 · pass 42 / fail 3 / total 45 · elapsed 972.02s
 
 | kind | n | p50 (s) | p90 (s) | mean n_results |
 | --- | --: | -----: | -----: | -------------: |
-| extract | 4 | 0.62 | 0.93 | — |
-| search | 5 | 2.62 | 3.04 | 5.00 |
-
-Backends seen: `exa`, `keenable`, `keyless`, `managed`, `parallel`, `perplexity`
+| corpus | 45 | 10.83 | 60.31 | — |
 
 ### Battery runs in window
 
-| run | generated | pass | fail | total | live_calls | extract p50 (s) | search p50 (s) |
-| --- | --- | --: | --: | --: | --: | --: | --: |
-| `battery_20261006_030045.json` | 2026-10-06T03:00:45 | 9 | 0 | 9 | 9 | 0.85 | 1.20 |
-| `battery_20261006_032736.json` | 2026-10-06T03:27:36 | 9 | 0 | 9 | 9 | 0.57 | 1.22 |
-| `battery_20261006_073919.json` | 2026-10-06T07:39:19 | 9 | 0 | 9 | 10 | 0.69 | 1.20 |
-| `battery_20261006_144208.json` | 2026-10-06T14:42:08 | 9 | 0 | 9 | 9 | 0.59 | 1.42 |
-| `battery_20261006_175403.json` | 2026-10-06T17:54:03 | 9 | 0 | 9 | 9 | 0.62 | 2.62 |
+| run | generated | pass | fail | total | live_calls | corpus p50 (s) | extract p50 (s) | search p50 (s) |
+| --- | --- | --: | --: | --: | --: | --: | --: | --: |
+| `battery_20261006_144208.json` | 2026-10-06T14:42:08 | 9 | 0 | 9 | 9 | — | 0.59 | 1.42 |
+| `battery_20261006_175403.json` | 2026-10-06T17:54:03 | 9 | 0 | 9 | 9 | — | 0.62 | 2.62 |
+| `battery_20261006_200326.json` | 2026-10-06T20:03:26 | 9 | 0 | 9 | 9 | — | 0.63 | 1.20 |
+| `battery_20261006_202208.json` | 2026-10-06T20:22:08 | 9 | 0 | 9 | 9 | — | 0.10 | 2.11 |
+| `battery_20261006_214701.json` | 2026-10-06T21:47:01 | 9 | 0 | 9 | 9 | — | 0.63 | 2.51 |
+| `r10_corpus_20261006_173124.json` | 2026-10-06T17:30:54+00:00 | 2 | 1 | 3 | 3 | 9.51 | — | — |
+| `r10_corpus_20261006_185034.json` | 2026-10-06T18:32:39+00:00 | 45 | 0 | 45 | 45 | 14.65 | — | — |
+| `r10_corpus_baseline_20261006_182313.json` | 2026-10-06T18:10:10+00:00 | 41 | 4 | 45 | 45 | 8.68 | — | — |
+| `r10_corpus_control_20261006_191047.json` | 2026-10-06T18:54:35+00:00 | 42 | 3 | 45 | 45 | 10.83 | — | — |
 
 ## Cross-run trend
 
-vs `battery_20261006_144208.json`: pass +0 · fail +0 · live_calls +0 · p50_search +1.20s · p50_extract +0.03s
+vs `r10_corpus_control_20261006_191047.json`: pass +0 · fail +0 · live_calls +0 · p50_search n/a · p50_extract n/a
 
-_latest run battery_20261006_175403.json vs previous battery_20261006_144208.json_
+_latest run unchanged since previous scoreboard (r10_corpus_control_20261006_191047.json)_
 
 ## Keyless runs
 
 | run | generated | pass | fail | total | live_calls |
 | --- | --- | --: | --: | --: | --: |
-| `keyless_20261006_024710.json` | 2026-10-06T02:47:10 | 6 | 0 | 6 | 6 |
-| `keyless_20261006_030121.json` | 2026-10-06T03:01:21 | 4 | 2 | 6 | 10 |
-| `keyless_20261006_073941.json` | 2026-10-06T07:39:41 | 6 | 0 | 6 | 6 |
-| `keyless_20261006_144229.json` | 2026-10-06T14:42:29 | 6 | 0 | 6 | 6 |
-| `keyless_20261006_175425.json` | 2026-10-06T17:54:25 | 6 | 0 | 6 | 6 |
+| `keyless_20261006_200418.json` | 2026-10-06T20:04:18 | 6 | 0 | 6 | 6 |
+| `keyless_20261006_202234.json` | 2026-10-06T20:22:34 | 6 | 0 | 6 | 6 |
+| `keyless_20261006_214725.json` | 2026-10-06T21:47:25 | 6 | 0 | 6 | 6 |
+| `keyless_20261006_214812.json` | 2026-10-06T21:48:12 | 6 | 0 | 6 | 6 |
+| `keyless_20261006_214911.json` | 2026-10-06T21:49:11 | 6 | 0 | 6 | 6 |
 
 ---
-generated_at: 2026-10-06T10:54:58+00:00
+generated_at: 2026-10-06T21:27:10+00:00
