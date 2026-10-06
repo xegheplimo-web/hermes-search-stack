@@ -7,9 +7,10 @@ the query's language (Vietnamese questions get Vietnamese answers), ground
 ONLY on the supplied evidence, attach ``[n]`` citations per sentence, end with
 a ``## Sources`` list, and state insufficiency instead of inventing. A
 deterministic ``Current date:`` block (Asia/Ho_Chi_Minh) plus relative-date /
-staleness rules keep time-relative answers honest (R10-A). HTTP or transport
-failures never raise — they map to a minimal fallback text with
-``last_warning`` set for the caller.
+staleness rules keep time-relative answers honest (R10-A), and source-tier
+policy rules keep law/government answers on authoritative sources (R10-B).
+HTTP or transport failures never raise — they map to a minimal fallback text
+with ``last_warning`` set for the caller.
 """
 
 from __future__ import annotations
@@ -35,7 +36,12 @@ _SYSTEM = (
     "- Ground every statement ONLY on the evidence passages below; never use outside knowledge.\n"
     "- Attach a citation marker [n] — matching the evidence item numbers — to every sentence.\n"
     "- If the evidence is insufficient, say so plainly instead of inventing facts.\n"
-    "- Finish with a '## Sources' section listing '[n] title — url' for every cited item."
+    "- Finish with a '## Sources' section listing '[n] title — url' for every cited item.\n"
+    "- For law, government, or administrative questions, prefer primary legal-tier sources "
+    "(e.g. thuvienphapluat.vn, vbpl.vn, gov.vn, chinhphu.vn) as the basis of the answer.\n"
+    "- Never present commercial or retail sources as the legal basis when authoritative "
+    "legal evidence exists.\n"
+    "- If only non-authoritative evidence exists for such a question, say so plainly."
 )
 
 _SYSTEM_DATE_RULES = (

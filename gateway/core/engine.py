@@ -193,9 +193,14 @@ class Engine:
         else:
             urls = _dedupe_urls(search_items)[: max(0, self.config.fast_extract)]
             evidence = self._extract_evidence(urls, search_items, errors, warnings)
-            trust_by_url = {}
+            # R10-B: the fast path applies the SAME advisory trust ordering as
+            # the deep path — ordering only; never drops/blocks sources. On
+            # trust failure _trust_order keeps the search order and appends a
+            # warning (existing semantics).
+            evidence, trust_by_url = self._trust_order(evidence, warnings)
             if not evidence:
                 evidence = _search_items_to_evidence(search_items[: self.config.fast_extract])
+                evidence, trust_by_url = self._trust_order(evidence, warnings)
         timings["extract_ms"] = int(_ms() - t)
 
         # 4) synthesis (streamed deltas; fallback text on failure).
