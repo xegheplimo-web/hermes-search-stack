@@ -300,6 +300,9 @@ difficulty/uncertainty signals are deferred (keep deterministic).
 - **Deadline**: each op checks `deadline_passed()` before starting; skipped ops → `(query, None, "deadline")`.
   In-flight ops are NOT cancelled (cooperative semantics, same as D).
 - `close()` — terminates backends exposing `close()`; worker threads are daemons (never block exit).
+- Worker backends are **cached per slot** and reused across map calls for the pool's lifetime
+  (build once, close once; §7.1a) — a fresh backend per map call would re-spawn a bridge worker
+  subprocess on every call.
 - Deterministic results: output order == input order, regardless of completion order.
 
 ### §7.2 New module `gateway/core/ultra.py`
