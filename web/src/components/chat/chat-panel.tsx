@@ -1,9 +1,10 @@
 "use client";
 
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
-import { useMemo, useRef, type FC } from "react";
+import { useEffect, useMemo, useRef, type FC } from "react";
 
 import { createHermesAdapter } from "@/lib/hermes-adapter";
+import { DEMO_PLACES_QUERY } from "@/lib/events";
 import type { ChatThread, StoredMessage } from "@/lib/types";
 import { Thread } from "@/components/assistant-ui/thread";
 
@@ -24,7 +25,10 @@ export const ChatPanel: FC<{
     () =>
       createHermesAdapter({
         onRunEnd: (msgs) => onMessagesRef.current(msgs),
+        demo: thread.demo,
       }),
+    // thread.demo is fixed at thread creation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -34,6 +38,19 @@ export const ChatPanel: FC<{
       content: m.content,
     })),
   });
+
+  // Demo threads auto-drive the replay path once on first mount.
+  const demoKicked = useRef(false);
+  useEffect(() => {
+    if (
+      demoKicked.current ||
+      !thread.demo ||
+      thread.messages.length > 0
+    )
+      return;
+    demoKicked.current = true;
+    runtime.thread.append(DEMO_PLACES_QUERY);
+  }, [runtime, thread.demo, thread.messages.length]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

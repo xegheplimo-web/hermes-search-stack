@@ -11,4 +11,9 @@ export type ChatThread = {
   createdAt: number;
   updatedAt: number;
   messages: StoredMessage[];
+  /**
+   * Dev-only: thread driven by the /api/demo-events replay path instead of
+   * the real /api/chat proxy (sidebar "Demo: places" button).
+   */
+  demo?: boolean;
 };

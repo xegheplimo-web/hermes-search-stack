@@ -1,4 +1,10 @@
-import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
+import type {
+  ChatModelAdapter,
+  ThreadAssistantMessagePart,
+  ThreadMessage,
+  ToolCallMessagePart,
+} from "@assistant-ui/react";
+import { DEMO_PLACES_QUERY, parseHermesEvent } from "./events";
 import type { StoredMessage } from "./types";
 
 /** Convert assistant-ui thread messages to OpenAI-style {role, content}. */
@@ -23,24 +29,72 @@ type Options = {
    * persist thread state to localStorage.
    */
   onRunEnd?: (messages: StoredMessage[]) => void;
+  /**
+   * Demo mode: POST `{query}` (the last user message text) to
+   * /api/demo-events instead of proxying /api/chat. Used only by the
+   * dev-only "Demo: places" sidebar button, which replays the captured
+   * hermes_places fixture through the same rich-event path.
+   */
+  demo?: boolean;
+};
+
+/** `data` part carrying one status frame; rendered by ResearchStatusUI. */
+type StatusPart = {
+  type: "data";
+  id: string;
+  name: "status";
+  data: { label: string; done: boolean };
 };
 
 /**
  * ChatModelAdapter for the local /api/chat proxy (OpenAI-compatible SSE).
  * `run` is an async generator yielding cumulative message snapshots so
  * assistant-ui can render progressive streaming.
+ *
+ * Rich-event mapping (r16-interfaces §6): `status` frames become `data` parts
+ * (name "status", rendered by ResearchStatusUI) and `tool` frames become
+ * `tool-call` parts (rendered via `tools.by_name`, e.g. PlacesToolUI for
+ * `hermes_places`). Parts are ordered [statuses, text, tools] so the status
+ * line sits above the message text and tool UIs render below it.
  */
 export function createHermesAdapter(opts?: Options): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
       const apiMessages = toApiMessages(messages);
+      const demo = opts?.demo === true;
+      const query =
+        [...apiMessages].reverse().find((m) => m.role === "user")?.content ||
+        DEMO_PLACES_QUERY;
+
       let text = "";
+      const statusParts: StatusPart[] = [];
+      const toolParts = new Map<string, ToolCallMessagePart>();
+      let statusSeq = 0;
+
+      const markStatusesDone = () => {
+        for (let i = 0; i < statusParts.length; i++) {
+          const p = statusParts[i];
+          if (!p.data.done) {
+            statusParts[i] = { ...p, data: { ...p.data, done: true } };
+          }
+        }
+      };
+
+      const snapshot = (): { content: ThreadAssistantMessagePart[] } => ({
+        content: [
+          ...statusParts,
+          ...(text ? [{ type: "text" as const, text }] : []),
+          ...toolParts.values(),
+        ],
+      });
 
       try {
-        const res = await fetch("/api/chat", {
+        const res = await fetch(demo ? "/api/demo-events" : "/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: apiMessages, stream: true }),
+          body: JSON.stringify(
+            demo ? { query } : { messages: apiMessages, stream: true },
+          ),
           signal: abortSignal,
         });
 
@@ -86,6 +140,40 @@ export function createHermesAdapter(opts?: Options): ChatModelAdapter {
                     : ((err as { message?: string }).message ?? "backend error"),
                 );
               }
+
+              // Hermes rich-event frames (status / tool).
+              const event = parseHermesEvent(chunk);
+              if (event) {
+                if (event.type === "status") {
+                  markStatusesDone(); // previous status superseded
+                  statusParts.push({
+                    type: "data",
+                    id: `status-${statusSeq++}`,
+                    name: "status",
+                    data: { label: event.label, done: false },
+                  });
+                } else {
+                  const args = (event.args ??
+                    {}) as ToolCallMessagePart["args"];
+                  const existing = toolParts.get(event.id);
+                  toolParts.set(event.id, {
+                    ...(existing ?? {
+                      type: "tool-call",
+                      toolCallId: event.id,
+                      toolName: event.name,
+                    }),
+                    args,
+                    argsText: JSON.stringify(event.args ?? {}),
+                    ...(event.state === "done"
+                      ? { result: event.result }
+                      : {}),
+                  });
+                  if (event.state === "done") markStatusesDone();
+                }
+                yield snapshot();
+                continue;
+              }
+
               const choice = (chunk as {
                 choices?: Array<{
                   delta?: { content?: string };
@@ -95,14 +183,16 @@ export function createHermesAdapter(opts?: Options): ChatModelAdapter {
 
               const delta = choice?.delta?.content;
               if (typeof delta === "string" && delta) {
+                markStatusesDone(); // answer phase: statuses are complete
                 text += delta;
-                yield { content: [{ type: "text", text }] };
+                yield snapshot();
               } else {
                 // Tolerate non-delta payloads (full message in one chunk).
                 const full = choice?.message?.content;
                 if (typeof full === "string" && full.length > text.length) {
+                  markStatusesDone();
                   text = full;
-                  yield { content: [{ type: "text", text }] };
+                  yield snapshot();
                 }
               }
             }
@@ -112,8 +202,9 @@ export function createHermesAdapter(opts?: Options): ChatModelAdapter {
           reader.releaseLock();
         }
 
-        // Ensure the final accumulated text is emitted at least once.
-        yield { content: [{ type: "text", text }] };
+        // Ensure the final accumulated content is emitted at least once.
+        markStatusesDone();
+        yield snapshot();
       } finally {
         opts?.onRunEnd?.([
           ...apiMessages,

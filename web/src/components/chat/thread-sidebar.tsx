@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, MapPin, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useState, type FC, type KeyboardEvent } from "react";
 
 import { sorted, type ThreadStore } from "@/lib/threads";
@@ -120,7 +120,19 @@ export const ThreadSidebar: FC<Props> = ({ store, onNavigate }) => {
       </nav>
 
       <div className="border-t border-border p-3 text-xs text-muted-foreground">
-        Hermes Web UI
+        <div>Hermes Web UI</div>
+        {process.env.NODE_ENV !== "production" && (
+          <button
+            onClick={() => {
+              store.createThread({ demo: true });
+              onNavigate?.();
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="Replay the captured hermes_places fixture (dev only)"
+          >
+            <MapPin size={12} /> Demo: places
+          </button>
+        )}
       </div>
     </div>
   );

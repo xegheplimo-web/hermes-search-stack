@@ -33,6 +33,10 @@ npm run build && npm start   # http://localhost:3000
 to the browser (no `NEXT_PUBLIC_` prefix). When unset, no `Authorization`
 header is sent upstream.
 
+| Variable              | Default | Notes                                                  |
+| --------------------- | ------- | ------------------------------------------------------ |
+| `HERMES_DEMO_EVENTS`  | `1`     | `0` disables `/api/demo-events`; always off in production |
+
 ## Architecture
 
 ```
@@ -53,9 +57,76 @@ browser ──POST {messages, stream}──> /api/chat (Next route handler)
 On the client, `useLocalRuntime` (assistant-ui) is driven by a custom
 `ChatModelAdapter` (`src/lib/hermes-adapter.ts`) that POSTs to `/api/chat`,
 parses the OpenAI SSE deltas itself, and yields cumulative
-`{content: [{type: "text", text}]}` snapshots for progressive rendering.
+`{content: [...]}` snapshots for progressive rendering.
 Because the adapter — not the route — owns protocol translation, the proxy can
 stay a dumb pipe and the backend can later emit richer part types.
+
+## Rich event envelope (r16 §6)
+
+The SSE `data:` stream mixes two frame families. Content frames stay
+OpenAI-style chunks (back-compat); Hermes event frames are:
+
+```jsonc
+{"type": "status", "label": "<progress text>"}
+{"type": "tool", "id": "call-1", "name": "hermes_places", "state": "running", "args": {…}}
+{"type": "tool", "id": "call-1", "name": "hermes_places", "state": "done", "args": {…}, "result": {…}}
+```
+
+`result` is the tool's full JSON verbatim (frozen §1 shape for
+`hermes_places`). `src/lib/events.ts` holds the envelope types +
+`parseHermesEvent()` + the `hermes_places` payload types.
+
+**Surfacing choice:** the adapter maps event frames onto assistant-ui's
+native message-part types — `tool` frames become `tool-call` parts
+(`toolCallId`/`toolName`/`args`/`result`) and `status` frames become `data`
+parts (name `"status"`, data `{label, done}`). Renderers are keyed by name via
+`MessagePrimitive.Parts`: `tools.by_name["hermes_places"]` → `PlacesToolUI`,
+`data.by_name["status"]` → `ResearchStatusUI`. Parts are ordered
+`[statuses, text, tools]`, so the status line sits above the message text and
+tool UIs render below it.
+
+- **`PlacesToolUI`** (`components/tools/places-tool-ui.tsx`) — left: place
+  cards (name, ★ rating + review count, category, address, phone, hours,
+  thumbnail). Right: MapLibre map (`components/tools/places-map.tsx`, loaded
+  via `next/dynamic` `ssr: false` — never touches `window` on the server).
+  Card ↔ marker sync both ways; `fitBounds` from `payload.viewport`; card
+  click → `flyTo` + popup; marker click → card highlight + scroll-into-view.
+  Places without lat/lon simply don't get markers; if *no* place has coords
+  the map block is omitted and the list renders alone.
+- **`ResearchStatusUI`** — subtle line per status frame: `◉ <label>…` while
+  in flight → `✓ <label>` once settled.
+- **`SourcesDrawer`** — "Sources (N)" button under completed assistant
+  messages; right-side drawer with the full source list (same
+  `extractSources` heuristic as the chip row, which stays as-is).
+
+**Map tiles:** MapLibre uses the keyless demo style
+`https://demotiles.maplibre.org/style.json` — requires network. If tiles are
+unreachable (e.g. offline) the map area degrades to a static note; the list
+still renders. `maplibre-gl` is a `web/`-local dependency.
+
+### Demo path (dev only)
+
+`POST /api/demo-events {query}` replays the captured pilot stream — status →
+tool running → tool done (`result` = fixture payload verbatim) → assistant
+text (fixture `answer_markdown`, small delta chunks) → `[DONE]`. Hermetic:
+the fixture is bundled by import, no upstream fetch.
+
+- Gate: enabled while `HERMES_DEMO_EVENTS !== "0"` **and**
+  `NODE_ENV !== "production"` (returns 404 otherwise).
+- Fixture: `web/fixtures/hermes_places_pilot.json` — a verbatim copy of
+  `analysis/r16-fixtures/hermes_places_pilot.json` (REAL captured data,
+  2026-10-07). Its `demo_thumbnails` are **synthetic** picsum URLs for two
+  place ids, used only to demo the image path on rows whose `thumbnail` is
+  null — the UI badges them "demo image".
+- Try it: in `npm run dev`, click **"Demo: places"** in the sidebar footer —
+  it opens a demo thread that auto-sends `quán ăn Yên Dũng` through the
+  replay path (demo threads carry `demo: true`, so the adapter POSTs to
+  `/api/demo-events` with the last user message as `{query}`). Or curl:
+
+```bash
+curl -N -X POST http://127.0.0.1:3000/api/demo-events \
+  -H 'content-type: application/json' -d '{"query":"quán ăn Yên Dũng"}'
+```
 
 ## Features
 
@@ -120,20 +191,28 @@ with content on the same line is intentionally not treated as a section.
 
 ```
 web/
-├─ src/app/api/chat/route.ts     # SSE pass-through proxy (server-only envs)
+├─ fixtures/hermes_places_pilot.json  # REAL captured pilot (verbatim copy)
+├─ src/app/api/chat/route.ts          # SSE pass-through proxy (server-only envs)
+├─ src/app/api/demo-events/route.ts   # dev-only fixture SSE replay
 ├─ src/app/{layout,page}.tsx + globals.css + icon.svg
 ├─ src/lib/
-│  ├─ hermes-adapter.ts          # ChatModelAdapter: fetch + SSE parse -> yields
-│  ├─ threads.ts                 # localStorage thread store + auto-title
-│  ├─ sources.ts                 # source-chip extraction heuristic
+│  ├─ events.ts                # §6 event envelope types + parseHermesEvent
+│  ├─ hermes-adapter.ts        # ChatModelAdapter: fetch + SSE parse -> yields
+│  ├─ threads.ts               # localStorage thread store + auto-title
+│  ├─ sources.ts               # source-chip extraction heuristic
 │  └─ utils.ts / types.ts
 ├─ src/components/assistant-ui/
-│  ├─ thread.tsx                 # Thread/Composer/messages/action bars
-│  ├─ markdown-text.tsx          # markdown + code-block copy
-│  └─ source-chips.tsx           # chips row under completed replies
+│  ├─ thread.tsx               # Thread/Composer/messages/action bars + part wiring
+│  ├─ markdown-text.tsx        # markdown + code-block copy
+│  ├─ source-chips.tsx         # chips row under completed replies
+│  └─ sources-drawer.tsx       # "Sources (N)" right-side drawer
+├─ src/components/tools/
+│  ├─ places-tool-ui.tsx       # hermes_places renderer (list + map sync)
+│  ├─ places-map.tsx           # MapLibre map (client-only, dynamic import)
+│  └─ research-status-ui.tsx   # status-frame line renderer
 ├─ src/components/chat/
-│  ├─ app-shell.tsx              # sidebar + centered column + mobile drawer
-│  ├─ thread-sidebar.tsx         # new/switch/rename/delete
-│  └─ chat-panel.tsx             # per-thread runtime provider
+│  ├─ app-shell.tsx            # sidebar + centered column + mobile drawer
+│  ├─ thread-sidebar.tsx       # new/switch/rename/delete + dev demo button
+│  └─ chat-panel.tsx           # per-thread runtime provider (+ demo kick)
 └─ src/components/ui/button.tsx  # shadcn-style button
 ```
