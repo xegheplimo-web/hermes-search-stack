@@ -1,0 +1,30 @@
+{
+  "task": "r16-a",
+  "status": "done",
+  "files_changed": [
+    "gateway/mcp/tools.py",
+    "gateway/mcp/server.py",
+    "tests/gateway/test_mcp_tools.py",
+    "tests/gateway/test_mcp_places.py"
+  ],
+  "tests": {
+    "targeted": "C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest tests/gateway/test_mcp_places.py tests/gateway/test_mcp_tools.py -q -> 40 passed (exit 0)",
+    "full": "C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -> 1273 passed, 1 skipped (pre-existing skip; exit 0)",
+    "ruff": "ruff check gateway/mcp tests/gateway + ruff format --check gateway/mcp tests/gateway -> clean (29 files)"
+  },
+  "gates": {
+    "tool_registry_seven_names": "pass — TOOL_NAMES + FROZEN_TOOL_PARAMS now 7; hermes_places registered via existing make_tools().values() loop, no manual registration",
+    "frozen_params": "pass — required=(query,), defaults={area:None, category:None, min_rating:None, count:8}; schema/signature tests assert it",
+    "places_db_passthrough": "pass — make_tools/build_mcp/build_http_app/run_stdio all accept places_db kwarg mirroring store_db",
+    "hermetic": "pass — no network, no live data/*.db touched; all dbs under tmp_path; vn_geo.places.query_places monkeypatched only for passthrough/viewport tests",
+    "never_raises": "pass — missing db, empty db, query exceptions all return ok:false structured errors"
+  },
+  "deviations": [
+    "§1 'count' in the response reads as len(places), not the requested count: the frozen empty-result case says ok:true + count:0 + places:[], which only reconciles with count=len(places). Most conservative reading.",
+    "'numeric lat+lon' for viewport = isinstance(int/float) excluding bool; string coords are passed through on the Place but excluded from viewport math.",
+    "Non-int-able count (None/str/etc) falls back to the default 8 before clamping — never raises; signature guarantees int in practice.",
+    "Error payloads carry all top-level keys (ok,kind,query,area,count,places,viewport) plus error, per 'ALL top-level keys always present'; success payload omits 'error' (§1 shows it only on the error line).",
+    "query/area echoed verbatim as passed (§1 '<query as passed>'); stripped text goes only to text= of query_places."
+  ],
+  "notes": "hermes_places(query, area=None, category=None, min_rating=None, count=8) resolves places db via explicit places_db else <repo_root>/data/places.db through _resolve_repo_root; checks Path.exists() before opening so a missing db yields 'places db not found at <path>' instead of sqlite creating an empty file. Blank query -> text=None browse mode; count clamped 1..50 -> limit. Calls vn_places.query_places(store, text=..., area=..., category=..., min_rating=..., limit=...) inside `with SearchStore(path)`; lazy `from vn_geo import places as vn_places` inside the tool keeps the call site monkeypatchable. Rows map 1:1 via _place_row using .get() for all r16-b enrichment keys (phone/website/hours/thumbnail/source_url) so it works pre- and post-r16-b; id=row url, url=row source_url or id. Viewport helper computes bbox [min_lon,min_lat,max_lon,max_lat] + midpoint center over numeric-coord rows only; degenerate bbox for a single point; null when no coords. Docstrings updated six->seven in tools.py and server.py. The six existing tools' function bodies are untouched (byte-identical); only registry additions around them. Tests: 14 new tests in test_mcp_places.py (scan_a fixture via tmp SearchStore + save_places, missing/empty/default-path db, kwargs + real-db filter passthrough, count clamp, enrichment passthrough, sort passthrough, viewport incl. single-point + non-numeric exclusion, structured query failure, MCP smoke via build_mcp+call_tool); test_mcp_tools.py registry count test updated six->seven with all other assertions intact."
+}

@@ -1,0 +1,1 @@
+{"messages": [{"role": "user", "content": "Dùng công cụ hermes_places với query để trống và area=Yên Dũng để duyệt các quán ăn quanh thị trấn Neo; trả lời đúng 1 dòng, liệt kê tối đa 5 tên quán."}], "stream": true}

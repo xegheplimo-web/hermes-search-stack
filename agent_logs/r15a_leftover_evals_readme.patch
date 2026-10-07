@@ -1,0 +1,33 @@
+diff --git a/evals/r9/README.md b/evals/r9/README.md
+index 4e53157..200d86c 100644
+--- a/evals/r9/README.md
++++ b/evals/r9/README.md
+@@ -204,10 +204,16 @@ notes,error}], totals{pass,fail,total,elapsed_s}}`; corpus cases use
+ `kind: "corpus"` plus `signals` + `judge_pending`) and
+ `results/r10_corpus_<ts>.md` (per-difficulty / per-domain tables, latency
+ p50/p90 via `nearest_rank_percentile`, failure / judge-pending / stale
+-lists). R15-A also emits an identical `results/r15_corpus_<ts>.json/.md`
+-alias (read by the scoreboard gap scaffold) with v2 `aggregates`:
+-`{severity_weighted_pass_rate, p50_latency_s, p95_latency_s,
+-variant_consistency_avg}` plus per-case `severity` + `variant_consistency`.
++lists).
++
++R15-A (schema v2) additions to each case record: `severity` (S0..S3),
++`variant_consistency` (fraction of the case's probes that pass; 1.0 when the
++case has no variants), `base_id`, `has_variants`. A run-level `aggregates`
++block is added: `severity_weighted_pass_rate` (S0×4, S1×2, S2×1, S3×0.5),
++`p50_latency_s` / `p95_latency_s` (nearest-rank), `variant_consistency_avg`
++(mean over cases that have variants). The runner also emits an identical
++`results/r15_corpus_<ts>.{json,md}` alias (read by the scoreboard gap
++scaffold).
+ 
+ Checks are signals, not scores: `citations_present`, `sources_section_present`,
+ `source_domains`, `required_fields` heuristics (`answer`, `citations`,
+@@ -216,6 +222,5 @@ else is `judge-pending`), `must_include`/`must_not_include` normalized
+ substring match (casefold + whitespace collapse, diacritics preserved;
+ unmatched semantics → `judge-pending`, never a fabricated verdict), and a
+ freshness signal for `dynamic` ground truth. Stale dynamic cases are reported
+-separately and never counted as fail. `scoreboard.py` discovers
+-`r10_corpus_*.json` with the same math.
++separately and never counted as fail.
+ ```
