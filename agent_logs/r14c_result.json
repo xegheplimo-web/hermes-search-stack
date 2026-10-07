@@ -1,0 +1,37 @@
+{
+  "task": "r14-c",
+  "files_created": [
+    "vn_geo/resolve.py",
+    "tests/test_resolve.py",
+    "tests/test_places_identity.py",
+    "agent_logs/r14c_result.json"
+  ],
+  "files_modified": [
+    "vn_geo/places.py (_record_url + docstring + new private _slug helper; nothing else touched)"
+  ],
+  "tests_summary": {
+    "new_tests": "27 passed (11 identity + 16 resolve)",
+    "full_suite": "all green except 28 pre-existing environmental failures in tests/test_vn_geo_goong.py",
+    "environmental_failures": {
+      "count": 28,
+      "file": "tests/test_vn_geo_goong.py",
+      "cause": "Goong DailyLimiter state file %LOCALAPPDATA%/hermes/vn-geo/goong_usage.json is machine-global and shows count=1000 for 2026-10-07 (exhausted by the parallel live seed session). goong.py is untouched by this diff; failures reproduce without it.",
+      "not_caused_by_this_change": true
+    },
+    "ruff": "ruff check . clean; ruff format --check . clean (180 files)"
+  },
+  "acceptance_selfcheck": {
+    "identity_fix": "PASS — same source_id + different extra.url -> same url_key vn://<slug(src)>/<slug(sid)>; no source_id -> extra.url / vn://<src>/<quoted place_key> fallback preserved exactly (both tested)",
+    "resolver": "PASS — 7-entity fixture across 2 sources: tax_code pair, name_exact pair (folded name + same province hint), fuzzy name+geo pair (Jaccard 0.8, ~59 m), clear non-match sharing a blocking bucket -> 3 groups, expected canonicals/methods/scores; second run aliases_new==0 (aliases_existing==3); dry_run persists nothing",
+    "report": "PASS — groups carry canonical_entity_id + members[{entity_id,method,score}] + strongest-link method/score",
+    "cli_smoke": "python -m vn_geo.resolve run x2 on scratch db -> 1 new then 0 new/1 existing; report lists group (scratch db removed after check)"
+  },
+  "notes": [
+    "Contract says 'fold_d(name)'; implemented with vn_geo.categories.fold_text (public, identical to searchstore.store._entity_fold used by entity dedupe — a documented superset of the đ/Đ-only fold_d). Literal fold_d has no casefold/diacritic strip and would make rule (b) nearly useless; flagged here per 'do not deviate silently'.",
+    "run()['groups'] returned as the list of group dicts ({canonical_entity_id, members, method, score}) — same shape as report() — rather than a bare count; contract comment was ambiguous, list is strictly more informative and len() gives the count.",
+    "Whitespace-only source_id treated as absent in _record_url (matches place_key's own strip semantics); a literal 'truthy' reading would collapse distinct places onto an empty-slug 'vn://<src>/' url_key.",
+    "Per-member method/score = strongest matched edge incident to that member (lowest rule rank, then highest score, then partner id); group method/score = strongest member link. Blocking = tax_code-digit buckets + first folded-name-token buckets exactly as specified; the documented recall tradeoff (a >=0.8-similar pair differing in the first token can be missed) is in the module docstring.",
+    "Alias skip is unordered {canonical, alias} so any direction counts; self-alias degenerate pairs are skipped. run_id = 'resolve-<uuid12>' per run. Entities loaded via the 'entities' view (documents_current); missing entity_id falls back to store.entity_id_for.",
+    "Skipped project-toolchain-setup scaffolding (.devin/, AGENTS.md, lockfile, pre-commit): the task's 'write ONLY' scope forbids extra files in this worktree. Re-run /project-toolchain-setup on the main repo if desired."
+  ]
+}

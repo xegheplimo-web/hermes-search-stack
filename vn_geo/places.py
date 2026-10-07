@@ -145,7 +145,25 @@ def _record_source(record: dict, source: str | None, idx: int) -> str:
     return str(src)
 
 
+def _slug(value) -> str:
+    """Folded ASCII slug for ``vn://`` keys: ``Google Maps`` -> ``google-maps``,
+    ``Quán Ăn/12`` -> ``quan-an-12`` (unaccent ``_fold``, non-alnum -> ``-``)."""
+    return re.sub(r"[^a-z0-9]+", "-", _fold(str(value))).strip("-")
+
+
 def _record_url(record: dict, src: str) -> str:
+    """Dedup URL for a place record — stable identity (R14-C, contract §3).
+
+    A non-empty ``source_id`` wins over ``extra.url``: the doc is keyed
+    ``vn://<slug(src)>/<slug(source_id)>`` so a rotated/expired Maps URL no
+    longer mints a phantom new document (analysis/r14-plan.md §0.1 row 2).
+    Without ``source_id`` the previous behavior is preserved exactly:
+    ``extra.url`` when present, else ``vn://<src>/<quoted place_key>``.
+    ``record['extra']`` is never mutated — the raw URL stays in meta.
+    """
+    sid = str(record.get("source_id") or "").strip()
+    if sid:
+        return f"vn://{_slug(src)}/{_slug(sid)}"
     extra = record.get("extra") or {}
     if extra.get("url"):
         return str(extra["url"])
