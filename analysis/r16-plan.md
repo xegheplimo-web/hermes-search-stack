@@ -5,8 +5,10 @@ W1 DONE (r16-b `6945189`, r16-a merged + integration fix `4f47f96`; full gate gr
 W1.5 DONE (pilot `data/places.db` 8 rows via offline fallback — Overpass down; gateway live on :8787;
 MCP `hermes-search` enabled in Hermes — fix: `hermes pm install --extra mcp` (update had synced extras=[]);
 E2E smoke: 7 tools + `hermes_places` real call PASS). W2 DONE (r16-d merged `77a52b0` — build green,
-SSE demo 124 chunks + [DONE]; ledger `agent_logs/r16_verification_wave2.md`). W3 in flight (r16-e renderers;
-fixture `analysis/r16-fixtures/hermes_places_pilot.json` = real capture 2026-10-07).
+SSE demo 124 chunks + [DONE]; ledger `agent_logs/r16_verification_wave2.md`). W3 DONE (r16-e merged
+`b72e705` — build 0; demo 134 lines/63 chunks; chat 122 chunks + [DONE]; Playwright 8 markers/0 console
+errors; ledger `agent_logs/r16_verification_wave3.md`). Hermes api_server LIVE :8642 (key set 2026-10-07).
+Next: W4 hardening + full-stack wiring (web → api_server rich events → MCP live render).
 Input: external architecture brief (@file pasted_content_2026-10-07_06-53-39-640_bdb740.txt,
 written against HEAD `f9ed47d`) — re-verified against current HEAD `3d964ee` + working tree (§7).
 
