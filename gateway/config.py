@@ -149,6 +149,11 @@ class GatewayConfig:
     fast_extract: int = 4
     deep_search_queries: int = 3
     deep_extract: int = 8
+    xhigh_enabled: bool = True  # deep path only; False -> deep behaves as legacy
+    xhigh_max_subquestions: int = 3
+    xhigh_revise_max: int = 1
+    xhigh_judge: str = "off"  # "off" (mechanical) | "local" (one capped llm call)
+    xhigh_claim_overlap: float = 0.15
     hermes_python: str | None = None
     hermes_home: str | None = None
     repo_root: str = ""
@@ -177,6 +182,11 @@ class GatewayConfig:
             fast_extract=_env_int(f"{ENV_PREFIX}FAST_EXTRACT", 4),
             deep_search_queries=_env_int(f"{ENV_PREFIX}DEEP_SEARCH_QUERIES", 3),
             deep_extract=_env_int(f"{ENV_PREFIX}DEEP_EXTRACT", 8),
+            xhigh_enabled=_env_bool(f"{ENV_PREFIX}XHIGH_ENABLED", True),
+            xhigh_max_subquestions=_env_int(f"{ENV_PREFIX}XHIGH_MAX_SUBQUESTIONS", 3),
+            xhigh_revise_max=_env_int(f"{ENV_PREFIX}XHIGH_REVISE_MAX", 1),
+            xhigh_judge=_env_str(f"{ENV_PREFIX}XHIGH_JUDGE", "off"),
+            xhigh_claim_overlap=_env_float(f"{ENV_PREFIX}XHIGH_CLAIM_OVERLAP", 0.15),
             hermes_python=_env_opt(f"{ENV_PREFIX}HERMES_PYTHON"),
             hermes_home=_env_opt(f"{ENV_PREFIX}HERMES_HOME"),
             repo_root=_env_str(f"{ENV_PREFIX}REPO_ROOT", str(_REPO_ROOT)),
