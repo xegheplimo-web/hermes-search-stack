@@ -33,9 +33,47 @@ npm run build && npm start   # http://localhost:3000
 to the browser (no `NEXT_PUBLIC_` prefix). When unset, no `Authorization`
 header is sent upstream.
 
-| Variable              | Default | Notes                                                  |
-| --------------------- | ------- | ------------------------------------------------------ |
-| `HERMES_DEMO_EVENTS`  | `1`     | `0` disables `/api/demo-events`; always off in production |
+| Variable               | Default    | Notes                                                   |
+| ---------------------- | ---------- | ------------------------------------------------------- |
+| `HERMES_BACKEND_FLAVOR`| `gateway`  | `gateway` or `hermes_api` — see "Backend flavors" below |
+| `HERMES_DEMO_EVENTS`   | `1`        | `0` disables `/api/demo-events`; always off in production |
+
+### Backend flavors
+
+`HERMES_BACKEND_FLAVOR` selects how `/api/chat` treats the upstream stream.
+
+|                        | `gateway` (default)                          | `hermes_api`                                          |
+| ---------------------- | -------------------------------------------- | ----------------------------------------------------- |
+| Target                 | local r16 search gateway (`:8787`)           | Hermes api_server (`:8642`)                            |
+| Upstream stream        | already speaks the client contract           | OpenAI chunks + named SSE events                       |
+| Proxy behavior         | byte-for-byte passthrough                    | re-frames events into the frozen client contract       |
+| Tool results           | inline in the stream                         | **not streamed** — fetched from the session transcript |
+| Session header         | not sent                                     | `X-Hermes-Session-Id: web-<threadId>` forwarded        |
+
+In `hermes_api` mode (`src/lib/sse-transform.ts`):
+
+- `event: hermes.tool.progress` (`status: running`) →
+  `data: {"type":"tool","id":<toolCallId>,"name":<tool>,"state":"running"}`;
+  a leading `mcp__hermes_search__` is stripped so names match
+  `tools.by_name` (`…__hermes_places` → `hermes_places`). `args` are omitted —
+  the upstream frame doesn't carry them.
+- `status: completed` → the proxy GETs
+  `{backend_origin}/api/sessions/web-<threadId>/messages` (same Bearer key),
+  finds the latest `role:"tool"` message with a matching `tool_call_id`, and
+  emits `{"type":"tool",…,"state":"done","result":<parsed JSON>}`. Transcript
+  writes lag the stream, so it retries ~3× every ~350ms; on miss the frame
+  still emits with `result: null` — every `done` frame precedes `[DONE]`
+  (pending fetches are awaited with a ~3s hard bound after upstream ends).
+- `event: hermes.status` → `data: {"type":"status","label":<text>}`.
+- OpenAI chunks pass through unchanged; unknown named events are skipped.
+- The upstream `X-Hermes-Session-Id` response header is echoed on the
+  browser response (debug aid). `threadId` is validated against
+  `/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/`; absent/invalid simply disables the
+  session header and result fetch (frames still emit, `result: null`).
+
+The adapter sends `threadId` in the `/api/chat` body (from the localStorage
+thread store). The backend key stays server-side in both flavors — it is
+also used for the transcript GET.
 
 ## Architecture
 
@@ -50,9 +88,10 @@ browser ──POST {messages, stream}──> /api/chat (Next route handler)
 `x-accel-buffering: no`). Backend errors are converted into an SSE
 `{error: {message}}` frame so the client surface stays one protocol.
 
-**Backend swap:** the same proxy works unchanged against the future Hermes
-`api_server` — point `HERMES_BACKEND_URL` at
-`http://127.0.0.1:8642/v1/chat/completions` (env-only change, no code edits).
+**Backend swap:** the same proxy also serves the Hermes `api_server` — set
+`HERMES_BACKEND_FLAVOR=hermes_api` and point `HERMES_BACKEND_URL` at
+`http://127.0.0.1:8642/v1/chat/completions` (env-only change, no code edits;
+see "Backend flavors" above).
 
 On the client, `useLocalRuntime` (assistant-ui) is driven by a custom
 `ChatModelAdapter` (`src/lib/hermes-adapter.ts`) that POSTs to `/api/chat`,
@@ -192,11 +231,12 @@ with content on the same line is intentionally not treated as a section.
 ```
 web/
 ├─ fixtures/hermes_places_pilot.json  # REAL captured pilot (verbatim copy)
-├─ src/app/api/chat/route.ts          # SSE pass-through proxy (server-only envs)
+├─ src/app/api/chat/route.ts          # SSE proxy: gateway passthrough / hermes_api transform
 ├─ src/app/api/demo-events/route.ts   # dev-only fixture SSE replay
 ├─ src/app/{layout,page}.tsx + globals.css + icon.svg
 ├─ src/lib/
 │  ├─ events.ts                # §6 event envelope types + parseHermesEvent
+│  ├─ sse-transform.ts         # hermes_api → client-contract re-frame (server)
 │  ├─ hermes-adapter.ts        # ChatModelAdapter: fetch + SSE parse -> yields
 │  ├─ threads.ts               # localStorage thread store + auto-title
 │  ├─ sources.ts               # source-chip extraction heuristic

@@ -36,6 +36,14 @@ type Options = {
    * hermes_places fixture through the same rich-event path.
    */
   demo?: boolean;
+  /**
+   * Stable per-thread id, sent as `threadId` in the /api/chat body. In
+   * `hermes_api` backend flavor the proxy maps it to the upstream
+   * `X-Hermes-Session-Id` header (`web-<threadId>`) for multi-turn context
+   * and to fetch tool results from the session transcript. Unused in demo
+   * mode and ignored by the `gateway` flavor.
+   */
+  threadId?: string;
 };
 
 /** `data` part carrying one status frame; rendered by ResearchStatusUI. */
@@ -93,7 +101,13 @@ export function createHermesAdapter(opts?: Options): ChatModelAdapter {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(
-            demo ? { query } : { messages: apiMessages, stream: true },
+            demo
+              ? { query }
+              : {
+                  messages: apiMessages,
+                  stream: true,
+                  ...(opts?.threadId ? { threadId: opts.threadId } : {}),
+                },
           ),
           signal: abortSignal,
         });
