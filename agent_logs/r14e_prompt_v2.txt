@@ -1,0 +1,44 @@
+R14-E v2 — Geocode attempt-tracking + retry window (seed re-run speed fix)
+
+Repo: hermes-search-stack. Your worktree root = cwd (E:/aoe-native-agent-worktrees/r14-e, branch r14-e).
+Python: C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe
+
+IMPORTANT — READ FIRST
+- A previous attempt on this task spent >20 minutes deliberating design semantics and wrote NO files before being stopped. The semantics below are ALREADY DECIDED — do not re-litigate them; implement directly. Budget: read the code (~2 min), write the implementation, write tests, run them, run the live demo. Aim to have business.py edited within your first ~5 minutes.
+
+CONTEXT
+- vn_geo/business.py seed_from_config(): EVERY re-run re-geocodes EVERY coordinate-less record (line ~428): ckan_hp 1,261 + masothue 75 ≈ 1,336 records × (latency + 1.5 s politeness) ≈ 50 min per re-run → seed re-runs hit wrapper timeouts.
+- geocode() chain: Goong (key pending) → Nominatim → status "approximate" + null coords. Hit-rate is low → most records fall to approximate and get retried forever.
+- Skip-runs must add ZERO document versions (no content churn).
+
+DECIDED SEMANTICS (implement exactly)
+1) Config: new OPTIONAL key `business_geocode_retry_days` (number, default 7), read from the area config next to `business_geocode_missing`.
+2) In seed_from_config(), replace the current unconditional branch:
+   - An attempt is allowed only when ALL hold: geocode_missing is true; the INCOMING record lacks lat/lng; there is NO fresh attempt marker for the entity; AND the STORED entity (same entity_id) does not already have coords.
+   - Marker: store in the store's `kv` table: key `geocode_attempted:<entity_id>` → ISO-8601 UTC timestamp. Use `store.entity_id_for(...)` for the id (check its exact signature). Write the marker after EVERY attempt — success OR failure (this is what stops re-geocoding previously-successful records; do not rely on incoming coords for that, incoming never gains coords).
+   - "Fresh" = marker exists and its age < retry_days. Absent marker = attempt.
+   - Skipped due to fresh marker → count `geocode_skipped_recent`. Skipped because the stored entity already has coords → count `geocode_skipped_enriched`.
+   - Politeness: keep `time.sleep(1.5)` after REAL attempts only — the skip path must not sleep.
+3) `business_geocode_missing:false` → no attempts at all, no markers (existing semantics).
+4) Seed summary: ADD keys only — per-area and totals: `geocoded` (attempts made), `geocode_skipped_recent`, `geocode_skipped_enriched`. Keep every existing key (seeded, fetched, skipped_sources, areas, ok) byte-compatible.
+
+TESTS — new tests/test_business_geocode_policy.py, hermetic (no network):
+- monkeypatch business._goong_geocode / business._nominatim_geocode with call counters (configurable success/failure per call); monkeypatch business.time.sleep (record, never sleep).
+- run1 tmp db: N attempts (failures) → markers written, summary geocoded=N.
+- run2 immediately: geocoded=0, geocode_skipped_recent=N, ZERO new document versions (assert via a store count).
+- SUCCESS case: run1 succeeds for a record → run2: geocoded=0, that record counted in geocode_skipped_enriched (stored has coords).
+- window elapsed (retry_days=0 or age markers): attempts again.
+- business_geocode_missing=false → 0 attempts, no markers.
+- default retry_days = 7 when key absent.
+- full suite still passes.
+
+ACCEPTANCE (orchestrator re-runs — make these true):
+- `.venv python -m pytest -q` exit 0; `ruff check .` + `ruff format --check .` clean.
+- LIVE DEMO (scratch db data/r14-e-test.db — NEVER data/vn-geo.db, live/read-only): mini config data/r14-e-cfg.json = {"business_enabled": true, "areas": [ <the Yên Dũng entry copied verbatim from analysis/refresh-areas.json> ]}. Run `python -m vn_geo business seed --config data/r14-e-cfg.json --db data/r14-e-test.db --json` TWICE. Run1: geocoded >= 1. Run2: geocoded = 0, (geocode_skipped_recent + geocode_skipped_enriched) >= 1, wall < 20 s. Paste both JSON outputs into result.json.
+- result.json: what changed, config keys, counters, test list, both demo outputs.
+
+RULES
+- Scope: vn_geo/business.py + tests/test_business_geocode_policy.py ONLY. Do NOT touch store.py, __main__.py, refresh_cron.py, README, or analysis/ configs. stdlib only, no new deps.
+- NEVER write data/vn-geo.db. NEVER git commit/push/branch/stash — orchestrator owns git.
+- Hermetic pytest (no network in tests). Live demo may use network for fetch + a few geocode calls.
+- Stay INSIDE your worktree (no reads/copies outside it). Run tools via the venv python above, cwd = worktree root.

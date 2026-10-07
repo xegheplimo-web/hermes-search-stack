@@ -40,7 +40,7 @@ Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI pe
 | `enterprises` | provincial CKAN open data (Hải Phòng, Tây Ninh…) | monthly business-registration datasets → ingest / query |
 | `refresh` | the other modules (no new source) | coverage report (what's missing per area/source) + auto-backfill `run` with content-addressed dedup — re-running unchanged data adds **0 rows**; weekly cron: `scripts/refresh_cron.py` + `analysis/refresh-areas.json` |
 | `goong` | Goong REST v2 (VN Google-Maps alternative) | autocomplete / geocode / reverse / place detail with a hard local **1,000 req/day cap** (free tier); key via `GOONG_API_KEY` or `<LOCALAPPDATA>/hermes/vn-geo/keys.env` (never in repo) — account activation pending |
-| `business` | masothue / CKAN-ext / gosom JSONL | business-entity pipeline (round 13): normalize → geocode (Goong → Nominatim) → dedupe-upsert; FTS query with freshness flags; diff events; `seed` / `classify-rev` CLI |
+| `business` | masothue / CKAN-ext / gosom JSONL | business-entity pipeline (round 13): normalize → geocode (Goong → Nominatim; 7-day retry window) → dedupe-upsert; FTS query with freshness flags; diff events; `seed` / `classify-rev` CLI |
 | `boundaries` | pinned GISData GeoJSON (post-2025, 34 provinces) | province polygons → bbox / centroid / point-in-polygon locate; admin identity vs spatial authority split (round 14) |
 | `coverage` | `boundaries` + area config (no new source) | adaptive spatial coverage planner: polygon-truth cells, density tiers, deterministic + resumable cell ids → scanner job lists (round 14) |
 | `resolve` | stored entities (no new source) | cross-source entity resolution v1: non-destructive alias events with conservative guards (round 14) |
