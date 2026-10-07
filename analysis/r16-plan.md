@@ -4,7 +4,9 @@ Status: Round-0 plan v2 (2026-10-07). Authority: orchestrator (Hermes chat #2).
 W1 DONE (r16-b `6945189`, r16-a merged + integration fix `4f47f96`; full gate green).
 W1.5 DONE (pilot `data/places.db` 8 rows via offline fallback — Overpass down; gateway live on :8787;
 MCP `hermes-search` enabled in Hermes — fix: `hermes pm install --extra mcp` (update had synced extras=[]);
-E2E smoke: 7 tools + `hermes_places` real call PASS). W2 in flight (r16-d).
+E2E smoke: 7 tools + `hermes_places` real call PASS). W2 DONE (r16-d merged `77a52b0` — build green,
+SSE demo 124 chunks + [DONE]; ledger `agent_logs/r16_verification_wave2.md`). W3 in flight (r16-e renderers;
+fixture `analysis/r16-fixtures/hermes_places_pilot.json` = real capture 2026-10-07).
 Input: external architecture brief (@file pasted_content_2026-10-07_06-53-39-640_bdb740.txt,
 written against HEAD `f9ed47d`) — re-verified against current HEAD `3d964ee` + working tree (§7).
 

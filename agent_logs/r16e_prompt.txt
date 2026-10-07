@@ -1,0 +1,35 @@
+TASK — R16-W3: web/ rich tool renderers (PlacesToolUI + MapLibre, ResearchStatusUI, SourcesDrawer) + demo event path
+
+CONTEXT
+- Repo: C:\Users\atton\hermes-search-stack. Your worktree (branch r16-e) is the cwd.
+- web/ = Next.js 16 App Router + TS + Tailwind 4 + @assistant-ui/react chat shell — ALREADY MERGED, builds green (npm run build exit 0). Read web/README.md and analysis/r16-interfaces.md §5–§6 (FROZEN contract) first.
+- Today the backend is the OpenAI-compatible gateway (:8787) whose SSE carries CONTENT-ONLY frames. This task adds a canonical RICH EVENT ENVELOPE to the web app's stream handling, the renderers, and a demo replay path fed by REAL captured tool data.
+
+SCOPE (write ONLY): web/** + agent_logs/r16e_result.json. Read-only: everything else — especially analysis/r16-fixtures/hermes_places_pilot.json. NO git ops (no commit/branch/stash). npm installs allowed INSIDE web/ (you may add maplibre-gl; keep lockfile consistent).
+DO NOT: change /api/chat proxy semantics (stays a passthrough), break existing components/behavior, or invent tool data.
+
+CONTRACT (frozen §6)
+- Event frames (SSE `data:`): {"type":"status","label":...} | {"type":"tool","id","name","state":"running"|"done","args", ("result" when done)}. Content frames unchanged (OpenAI chunks). Renderers keyed by name.
+- Demo: POST /api/demo-events {query} → SSE replay: status → tool running → tool done (result = fixture payload VERBATIM) → assistant text (fixture answer_markdown), streamed in small chunks. Gate: enabled when process.env.HERMES_DEMO_EVENTS !== "0" and NODE_ENV !== "production"; document in README.
+- Fixture: analysis/r16-fixtures/hermes_places_pilot.json = REAL captured data (2026-10-07): {payload (hermes_places JSON, 8 places), answer_markdown (real gateway answer), demo_thumbnails (SYNTHETIC picsum URLs for 2 place ids — image-path demo only; label as demo in the UI)}. COPY it into web/fixtures/ verbatim; do not edit.
+
+DELIVERABLES
+1. web/src/lib/events.ts — envelope types + parse helper used by the adapter (content frames unchanged).
+2. hermes-adapter.ts — extend to surface status/tool parts on the assistant message (assistant-ui custom parts or metadata; document the choice).
+3. web/src/app/api/demo-events/route.ts — replay as above (same unbuffered SSE writer style as /api/chat).
+4. web/src/components/tools/places-tool-ui.tsx — PlacesToolUI:
+   - left list: name, rating★ + review_count, category, address, phone, hours, thumbnail img when non-null (else fixture demo_thumbnails[place.id] with a small "demo image" badge).
+   - right: MapLibre map (dynamic import, client-only, no SSR window crash). Style: https://demotiles.maplibre.org/style.json (keyless). Markers for places with lat/lon; fitBounds from payload.viewport; click card → flyTo + popup; click marker → highlight card. Graceful empty-state when no coords (list still renders).
+5. ResearchStatusUI — renders status frames (subtle line: "◉ <label>…" → "✓ done").
+6. SourcesDrawer — "Sources (N)" button under completed assistant messages; right-side drawer with the full source list (reuse the existing extractSources in lib/sources; keep the chip row as-is).
+7. Wire: an assistant message carrying a hermes_places tool part renders PlacesToolUI under the message text; status line above while running. Sidebar footer button "Demo: places" (dev only) starts a thread and drives the demo path (query "quán ăn Yên Dũng").
+8. README update: envelope spec + demo instructions + maplibre/tile note.
+
+ACCEPTANCE EVIDENCE (raw, into agent_logs/r16e_result.json)
+1. cd web && npm run build → exit 0 (paste tail).
+2. npm run start (or dev) → `curl -N -m 25 -X POST http://127.0.0.1:3000/api/demo-events -H 'content-type: application/json' -d '{"query":"quán ăn Yên Dũng"}'` → paste first ~10 frames + confirm the tool done frame's result has 8 places.
+3. Render proof for PlacesToolUI + map: node-level render/unit check OR Playwright text assertions (place name visible, canvas present) — record what proves it.
+4. Regression: existing /api/chat still streams — curl one short query against the REAL gateway on :8787 (it is running); record frame count + [DONE].
+5. No secrets; fixture unmodified (byte-check or note).
+
+CONSTRAINTS: only deps already present + maplibre-gl; demo route hermetic (no network); map tiles need network but must degrade gracefully offline; TypeScript strict. FINISH PROMPTLY once evidence is recorded — no extra polish loops.

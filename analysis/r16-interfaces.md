@@ -110,3 +110,22 @@ Do NOT touch `save_places`, `_record_url`, `_record_text`, `diff`, the CLI, or e
   (heuristic extraction from markdown links + trailing Nguồn/Sources list — v1, documented).
 - Gates: `npm run build` exit 0 · `npm run dev` + curl SSE demo through the proxy (recorded).
 - Out of scope: session persistence server-side, tool renderers (W3), images (W3), auth (W4).
+
+## §6 W3 tool-event contract + renderers (r16-e — frozen)
+
+Event envelope (SSE `data:` frames on the chat stream; the future Hermes api_server adapter emits the same):
+- `{"type":"status","label":"<text>"}` — progress line.
+- `{"type":"tool","id":"call-1","name":"hermes_places","state":"running","args":{...}}`
+- `{"type":"tool","id":"call-1","name":"hermes_places","state":"done","args":{...},"result":{...}}` — `result` = the
+  tool's full JSON exactly as returned (frozen §1 shape).
+Content frames stay OpenAI-style (back-compat); renderers keyed by `name`.
+
+Demo path: `POST /api/demo-events {query}` (dev route; gated by env `HERMES_DEMO_EVENTS`, default ON outside
+production) replays: status → tool running → tool done (payload from
+`analysis/r16-fixtures/hermes_places_pilot.json`, copied to `web/fixtures/`) → assistant text (fixture
+`answer_markdown`). Fixture = REAL captured data; `demo_thumbnails` (synthetic URLs) only demonstrate the
+image path for places whose rows carry no thumbnail — must be documented, never silently mixed in.
+
+Components (`web/src/components/tools/…`): `PlacesToolUI` (list + MapLibre; keyless demotiles style; card↔marker
+sync, fitBounds, popup, graceful empty-state), `ResearchStatusUI`, `SourcesDrawer`. Thumbnail rendered when
+non-null. `maplibre-gl` may be added to web/ deps (npm-side only).
