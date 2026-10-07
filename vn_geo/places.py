@@ -234,6 +234,21 @@ def save_places(store: SearchStore, records: list[dict], *, source: str | None =
 # --------------------------------------------------------------------------- query
 
 
+def _clean_str(v) -> str | None:
+    """Coerce to stripped str; blank/missing/None -> None (R16-B)."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
+def _extra_value(rec: dict, key: str) -> str | None:
+    extra = rec.get("extra")
+    if not isinstance(extra, dict):
+        return None
+    return _clean_str(extra.get(key))
+
+
 def _area_match(record: dict, area_q: str) -> bool:
     hay = [record.get(k) for k in _AREA_FIELDS]
     extra = record.get("extra") or {}
@@ -288,6 +303,12 @@ def query_places(
                 "category": rec.get("category"),
                 "url": row["url"],
                 "scanned_at": rec.get("scanned_at"),
+                "source_id": _clean_str(rec.get("source_id")),
+                "phone": _clean_str(rec.get("phone")),
+                "website": _clean_str(rec.get("website")),
+                "hours": _clean_str(rec.get("hours")),
+                "source_url": _clean_str(rec.get("source_url")) or _extra_value(rec, "url"),
+                "thumbnail": _clean_str(rec.get("thumbnail")) or _extra_value(rec, "thumbnail"),
             }
         )
     out.sort(key=lambda r: (r["rating"] is None, -(r["rating"] or 0.0), str(r["name"]).casefold()))
