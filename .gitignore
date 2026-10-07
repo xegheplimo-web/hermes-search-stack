@@ -17,3 +17,5 @@ build/
 data/
 scratch/
 vendor/
+# Added by code-review-graph
+.code-review-graph/
