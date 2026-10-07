@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""R10-C Vietnamese quality-corpus runner (frozen splits + objective signals).
+"""R10-C/R15-A Vietnamese quality-corpus runner (frozen splits + objective signals).
 
-Runs ``evals/r9/corpus_v0.jsonl`` cases against the read-only gateway
-``POST /v1/chat/completions`` and emits battery-compatible JSON + Markdown
-under ``results/`` so ``scripts/scoreboard.py`` math applies.
+Runs ``evals/r9/corpus_v0.jsonl`` (or ``--corpus corpus_v1.jsonl``) cases
+against the read-only gateway ``POST /v1/chat/completions`` and emits
+battery-compatible JSON + Markdown under ``results/`` so
+``scripts/scoreboard.py`` math applies.
+
+R15-A (schema v2) additions:
+  * per-case ``severity`` (S0..S3) + ``variant_consistency`` (fraction of a
+    case's probes that pass; 1.0 when the case has no variants)
+  * run-level ``aggregates``: ``severity_weighted_pass_rate``
+    (S0 x4, S1 x2, S2 x1, S3 x0.5), ``p50_latency_s`` / ``p95_latency_s``
+    (nearest-rank), ``variant_consistency_avg`` (mean over cases with variants)
+  * emits both ``r10_corpus_*`` (backward compat) and ``r15_corpus_*`` (read
+    by the scoreboard gap scaffold) with identical payloads.
 
 Splits (FROZEN, see evals/r9/splits.json + analysis/r10-interfaces.md §C):
   holdout    = ids where int(id[3:]) % 10 == 5  (excluded unless --include-holdout)
@@ -28,6 +38,7 @@ Usage (from repo root)::
 
     python evals/r9/run_corpus.py [--split regression,challenge] [--include-holdout]
         [--ids vn-001,vn-002] [--limit N] [--variants] [--sleep 2.0]
+        [--corpus evals/r9/corpus_v1.jsonl]
         [--gateway http://127.0.0.1:8787] [--out-dir results] [--dry-run] [--json]
 """
 
@@ -88,6 +99,53 @@ LEGAL_BASIS_RE = re.compile(
     r"(nghị định|luật\b|thông tư|quyết định|căn cứ|điều\s+\d+|khoản\s+\d+)",
     re.IGNORECASE,
 )
+
+# R15-A severity weights for the severity-weighted pass rate (schema v2).
+SEVERITY_WEIGHTS: dict[str, float] = {"S0": 4.0, "S1": 2.0, "S2": 1.0, "S3": 0.5}
+DEFAULT_SEVERITY = "S2"
+
+
+def case_severity(case: dict) -> str:
+    """Return the case severity (S0..S3), defaulting to S2 when absent."""
+    return str(case.get("severity", DEFAULT_SEVERITY))
+
+
+def severity_weighted_pass_rate(cases: list[dict]) -> float | None:
+    """Severity-weighted pass rate: sum(weight*pass)/sum(weight).
+
+    Weights: S0 x4, S1 x2, S2 x1, S3 x0.5. Returns None when no cases.
+    """
+    total_weight = 0.0
+    weighted_pass = 0.0
+    for case in cases:
+        weight = SEVERITY_WEIGHTS.get(case_severity(case), 1.0)
+        total_weight += weight
+        weighted_pass += weight * (1.0 if case.get("pass") else 0.0)
+    if total_weight <= 0:
+        return None
+    return weighted_pass / total_weight
+
+
+def variant_consistency_avg(cases: list[dict]) -> float | None:
+    """Mean per-case variant_consistency over cases that have variants.
+
+    Cases without variants are excluded (consistency is only measurable
+    across rephrasings). Returns None when no variant cases exist.
+    """
+    per_case: dict[str, float] = {}
+    for case in cases:
+        base_id = str(case.get("base_id", case.get("id")))
+        per_case[base_id] = float(case.get("variant_consistency", 1.0))
+    values = [consistency for base_id, consistency in per_case.items() if per_case_has_variants(cases, base_id)]
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def per_case_has_variants(cases: list[dict], base_id: str) -> bool:
+    """True when any probe row for ``base_id`` reports has_variants."""
+    return any(str(case.get("base_id", case.get("id"))) == base_id and case.get("has_variants") for case in cases)
+
 
 # required_fields -> (heuristic regex, description). Fields NOT in this map
 # are "judge-pending" (cannot be safely automated).
@@ -364,6 +422,7 @@ def write_markdown(
     gateway: str,
     probes: list[dict],
     elapsed_s: float,
+    aggregates: dict | None = None,
 ) -> str:
     latencies = [p["latency_s"] for p in probes if isinstance(p.get("latency_s"), (int, float))]
     p50 = _pct(latencies, 50)
@@ -384,6 +443,18 @@ def write_markdown(
         "",
         f"latency p50 {_fmt(p50)}s · p90 {_fmt(p90)}s (nearest-rank over probe wall time)",
         "",
+    ]
+    if aggregates:
+        lines += [
+            "## Aggregates (schema v2)",
+            "",
+            f"- severity_weighted_pass_rate: {_fmt(aggregates.get('severity_weighted_pass_rate'))}",
+            f"- p50_latency_s: {_fmt(aggregates.get('p50_latency_s'))}",
+            f"- p95_latency_s: {_fmt(aggregates.get('p95_latency_s'))}",
+            f"- variant_consistency_avg: {_fmt(aggregates.get('variant_consistency_avg'))}",
+            "",
+        ]
+    lines += [
         "## Per-difficulty",
         "",
         "| difficulty | n | pass | fail | judge-pending |",
@@ -463,6 +534,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="regression,challenge",
         help="comma-separated splits to run (default: regression,challenge)",
     )
+    parser.add_argument(
+        "--corpus",
+        type=Path,
+        default=CORPUS_PATH,
+        help="corpus JSONL path (default: evals/r9/corpus_v0.jsonl)",
+    )
     parser.add_argument("--include-holdout", action="store_true", help="include the frozen holdout split")
     parser.add_argument("--ids", default="", help="comma-separated case ids to run (e.g. vn-001,vn-002)")
     parser.add_argument("--limit", type=int, default=None, help="max probes to run (cases × variants)")
@@ -482,7 +559,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        corpus = load_corpus(CORPUS_PATH)
+        corpus = load_corpus(args.corpus)
     except (OSError, ValueError) as exc:
         print(f"[run_corpus] cannot load corpus: {exc}", file=sys.stderr)
         return 2
@@ -506,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     generated = datetime.now(UTC).isoformat(timespec="seconds")
     cases_out: list[dict] = []
+    case_tracker: dict[str, dict] = {}
     live_calls = 0
     for index, (case, probe_input, probe_label) in enumerate(probes):
         split = assign_split(case, holdout_ids)
@@ -530,19 +608,28 @@ def main(argv: list[str] | None = None) -> int:
         stale_note = verdict["signals"].get("stale_note", "")
         if stale_note and not verdict["stale"]:
             notes_bits.append(stale_note)
+        passed_probe = bool(verdict["pass"]) and not error
+        base_id = case.get("id")
+        tracker = case_tracker.setdefault(base_id, {"probes": 0, "passed": 0})
+        tracker["probes"] += 1
+        if passed_probe:
+            tracker["passed"] += 1
         cases_out.append(
             {
-                "id": f"{case.get('id')}:{probe_label}" if probe_label != "main" else case.get("id"),
+                "id": f"{base_id}:{probe_label}" if probe_label != "main" else base_id,
                 "kind": "corpus",
                 "input": probe_input,
-                "pass": bool(verdict["pass"]) and not error,
+                "pass": passed_probe,
                 "latency_s": round(wall_s, 3),
                 "notes": "; ".join(notes_bits),
                 "error": error,
                 "domain": case.get("domain"),
                 "difficulty": case.get("difficulty"),
+                "severity": case_severity(case),
                 "split": split,
                 "probe": probe_label,
+                "base_id": base_id,
+                "has_variants": bool(case.get("variants")),
                 "signals": verdict["signals"],
                 "judge_pending": verdict["judge_pending"],
             }
@@ -552,6 +639,17 @@ def main(argv: list[str] | None = None) -> int:
 
     elapsed_s = time.monotonic() - started
     passed = sum(1 for c in cases_out if c["pass"])
+    for case in cases_out:
+        tracker = case_tracker[case["base_id"]]
+        case["variant_consistency"] = tracker["passed"] / tracker["probes"] if tracker["probes"] else 1.0
+    swpr = severity_weighted_pass_rate(cases_out)
+    vca = variant_consistency_avg(cases_out)
+    aggregates = {
+        "severity_weighted_pass_rate": round(swpr, 4) if swpr is not None else None,
+        "p50_latency_s": _pct([c["latency_s"] for c in cases_out], 50),
+        "p95_latency_s": _pct([c["latency_s"] for c in cases_out], 95),
+        "variant_consistency_avg": round(vca, 4) if vca is not None else None,
+    }
     payload = {
         "generated": generated,
         "run_command": " ".join(["python", "evals/r9/run_corpus.py", *sys.argv[1:]])
@@ -570,14 +668,13 @@ def main(argv: list[str] | None = None) -> int:
             "total": len(cases_out),
             "elapsed_s": round(elapsed_s, 3),
         },
+        "aggregates": aggregates,
     }
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    json_path = out_dir / f"r10_corpus_{ts}.json"
-    md_path = out_dir / f"r10_corpus_{ts}.md"
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload_json = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     md_text = write_markdown(
         generated=generated,
         splits=splits,
@@ -585,14 +682,25 @@ def main(argv: list[str] | None = None) -> int:
         gateway=args.gateway,
         probes=cases_out,
         elapsed_s=elapsed_s,
+        aggregates=aggregates,
     )
+    json_path = out_dir / f"r10_corpus_{ts}.json"
+    md_path = out_dir / f"r10_corpus_{ts}.md"
+    json_path.write_text(payload_json, encoding="utf-8")
     md_path.write_text(md_text, encoding="utf-8")
+    # R15-A: emit r15_corpus_* alias (same payload) for the scoreboard gap
+    # scaffold, which discovers results/r15_corpus_*.json.
+    json_path_v2 = out_dir / f"r15_corpus_{ts}.json"
+    md_path_v2 = out_dir / f"r15_corpus_{ts}.md"
+    json_path_v2.write_text(payload_json, encoding="utf-8")
+    md_path_v2.write_text(md_text, encoding="utf-8")
 
     if args.json:
         print(str(json_path))
     else:
         print(
             f"corpus: {json_path.name} + {md_path.name} "
+            f"(+ r15_corpus_{ts}.json/.md alias) "
             f"({passed}/{len(cases_out)} pass, "
             f"judge-pending {sum(c['judge_pending'] for c in cases_out)}, "
             f"elapsed {elapsed_s:.1f}s)"
