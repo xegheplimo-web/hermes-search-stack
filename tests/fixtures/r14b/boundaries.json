@@ -1,0 +1,32 @@
+{
+  "square": {
+    "name": "Ô Vuông Test",
+    "area_km2": 123.4,
+    "bbox": [106.0, 20.0, 106.1, 20.1],
+    "geom": "square.geojson"
+  },
+  "square-hole": {
+    "name": "Ô Vuông Rỗng",
+    "area_km2": 500.0,
+    "bbox": [106.0, 20.0, 106.2, 20.2],
+    "geom": "square_hole.geojson"
+  },
+  "multi": {
+    "name": "Hai Ô",
+    "area_km2": 250.0,
+    "bbox": [106.0, 20.0, 106.6, 20.6],
+    "geom": "multipolygon.geojson"
+  },
+  "round-up": {
+    "name": "Ô Làm Tròn",
+    "area_km2": 99.0,
+    "bbox": [105.9996, 20.0, 106.1, 20.1],
+    "geom": "square_roundup.geojson"
+  },
+  "hai-phong": {
+    "name": "Hải Phòng (demo)",
+    "area_km2": 3765.0,
+    "bbox": [106.4, 20.55, 107.05, 21.05],
+    "geom": "province_demo.geojson"
+  }
+}
