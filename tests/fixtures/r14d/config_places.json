@@ -1,0 +1,21 @@
+{
+  "places_max_age_days": 90,
+  "areas": [
+    {
+      "name": "Yên Dũng",
+      "province": "Tỉnh Bắc Ninh",
+      "places": {
+        "provider": "gosom-jsonl",
+        "path": "tests/fixtures/r14d/gosom_places.jsonl"
+      }
+    },
+    {
+      "name": "Hải Phòng",
+      "province": "Thành phố Hải Phòng",
+      "places": {
+        "provider": "gosom-jsonl",
+        "path": "tests/fixtures/r14d/gosom_places.jsonl"
+      }
+    }
+  ]
+}
