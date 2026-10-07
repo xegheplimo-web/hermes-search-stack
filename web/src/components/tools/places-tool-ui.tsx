@@ -137,6 +137,16 @@ export const PlacesToolUI: ToolCallMessagePartComponent = ({ result }) => {
     );
   }
 
+  // Done but no payload — e.g. hermes_api mode where the transcript fetch
+  // missed/never ran. Render a quiet terminal state, never the raw "null".
+  if (result === null) {
+    return (
+      <div className="my-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+        hermes_places — completed (no result payload).
+      </div>
+    );
+  }
+
   const payload = asPlacesPayload(result);
   if (!payload) {
     return (

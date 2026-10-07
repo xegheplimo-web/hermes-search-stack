@@ -26,8 +26,10 @@ export const ChatPanel: FC<{
       createHermesAdapter({
         onRunEnd: (msgs) => onMessagesRef.current(msgs),
         demo: thread.demo,
+        threadId: thread.id,
       }),
-    // thread.demo is fixed at thread creation.
+    // thread.id and thread.demo are fixed at thread creation (the panel
+    // remounts via key={thread.id} on switch).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );

@@ -1,0 +1,62 @@
+# TASK r16-g — W4: web proxy "hermes_api" flavor — rich tool events from Hermes api_server :8642 + live places render
+
+Worktree: `E:/aoe-native-agent-worktrees/r16-g` (branch `r16-g`, from main). Windows host; git-bash. Node/npm available. Work ONLY inside this worktree.
+
+## Context (verified — read the code, trust it over this summary where they differ)
+
+- `web/` = Next.js 16 App Router + TypeScript + `@assistant-ui/react`. `web/src/app/api/chat/route.ts` is a thin server-side proxy: browser POSTs `{messages}` → it calls the backend OpenAI SSE endpoint and passthroughs bytes. Backend envs: `HERMES_BACKEND_URL` (default `http://127.0.0.1:8787/v1/chat/completions`), `HERMES_BACKEND_MODEL` (default `hermes-search`), `HERMES_BACKEND_KEY` (server-side Bearer, optional).
+- `web/src/lib/hermes-adapter.ts` (client, assistant-ui ChatModelAdapter) parses the SSE `data:` frames: OpenAI chunks (`choices[].delta.content`) AND "rich event" frames `{"type":"status","label":string}` / `{"type":"tool","id":string,"name":string,"state":"running"|"done","args"?:object,"result"?:unknown}` (parse in `web/src/lib/events.ts` — `parseHermesEvent`). Tool parts render via `tools.by_name`; `PlacesToolUI` (`web/src/components/tools/places-tool-ui.tsx`) renders the `hermes_places` payload from `result` = frozen shape `{ok,kind,query,area,count,places[],viewport}`.
+- **This client contract (`events.ts`) is FROZEN.** The whole point of this task: adapt the NEW backend format INTO it, server-side, so the client stays as-is.
+- Hermes api_server :8642 (OpenAI-compatible `/v1/chat/completions`, Bearer auth) streams: OpenAI chunks PLUS named SSE events:
+  - `event: hermes.tool.progress` → data `{"tool":"mcp__hermes_search__hermes_places","toolCallId":"call_x","status":"running"|"completed","emoji"?:"…","label"?:"…"}` (label only while running).
+  - `event: hermes.status` → data `{"kind":"…","text":"…"}`.
+  - It does NOT stream tool RESULTS. Results live in the session transcript: `GET /api/sessions/{session_id}/messages` (Bearer auth) → `{"object":"list","session_id":…,"data":[msg,…]}` where a tool-out message has `role:"tool"`, `tool_call_id`, `content` (JSON string), `tool_name` (field list confirmed in core `_message_response`: id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, …).
+  - Sessions: `/v1/chat/completions` accepts request header `X-Hermes-Session-Id` (stable id per thread = multi-turn context) and echoes it back as a response header (capture it).
+- Reference (READ-ONLY, do not modify): the Hermes core checkout at `C:/Users/atton/AppData/Local/hermes/hermes-agent/gateway/platforms/` — `api_server_openai_routes.py` (progress frames ~line 751-770, 906-916), `api_server.py` (`_handle_session_messages` ~3270, routes ~1736-1748).
+- Prior test evidence: `agent_logs/r16w4_openai_tools_sse.raw` + `r16w4_probe_sse.raw` (real captured streams, in-repo) — read them to see exact frame shapes.
+
+## Deliverable A — `web/src/app/api/chat/route.ts`: flavor support
+
+Add env `HERMES_BACKEND_FLAVOR` (`gateway` default = exact current behavior / `hermes_api` = transform below). In `hermes_api` mode the proxy must re-emit the upstream stream in the EXISTING client contract:
+
+1. Parse upstream SSE robustly (chunk boundaries; handle `event:`-named frames and plain `data:` frames; skip unknown events; tolerate keep-alives).
+2. `hermes.tool.progress` status=running → emit `data: {"type":"tool","id":<toolCallId>,"name":<normalized>,"state":"running"}`. Normalize the tool name: strip a leading `mcp__hermes_search__` (map `mcp__hermes_search__hermes_places` → `hermes_places`); leave other names as-is. Include `args` only if reliably known (else omit — do not invent).
+3. `hermes.tool.progress` status=completed → do NOT emit yet: register a pending result fetch (Deliverable B); emit `data: {"type":"tool","id":…,"name":…,"state":"done","result":<parsed payload or null>}` as soon as the fetch settles (or null on bounded timeout).
+4. `hermes.status` → emit `data: {"type":"status","label":<text>}`.
+5. OpenAI chunks → re-frame and passthrough as-is (keep `choices[].delta.content` semantics; keep `reasoning_content` deltas — harmless).
+6. On upstream `data: [DONE]`: wait for pending result fetches to settle (hard bound ≈3s total), emit any remaining `done` frames, then emit `data: [DONE]` and close. Order guarantee: every `done` frame for a tool MUST precede `[DONE]`.
+7. Sessions: read `threadId` from the request body (Deliverable C); when present, forward `X-Hermes-Session-Id: web-<threadId>` upstream. Capture the upstream response header `X-Hermes-Session-Id` and forward it on the browser response (debug aid).
+8. Keep the existing error behavior for unreachable/other-than-2xx upstream (`sseError` with detail). 401 must surface a clear message.
+9. Keep `gateway` mode byte-identical to today (pure passthrough).
+
+## Deliverable B — tool result fetch (in `hermes_api` mode)
+
+When a tool completes: `GET {backend_origin}/api/sessions/web-<threadId>/messages` with the same Bearer key (`backend_origin` derived from `HERMES_BACKEND_URL`), find the LATEST message with `role=="tool"` and `tool_call_id==<toolCallId>`, JSON-parse its `content` (it may be a JSON string; be defensive — `JSON.parse`, else try to locate an embedded JSON object, else null). Transcript writes can lag the stream: retry ≈3× every ~300-400ms; if still absent → `result: null` (never throw into the stream). No threadId → skip fetch, `result: null`. At most one fetch chain per completed tool.
+
+## Deliverable C — client wiring (minimal)
+
+`web/src/lib/hermes-adapter.ts` + supporting files: add `threadId` to the POST `/api/chat` body. Find the thread id in the existing thread storage (grep for the thread store / `createHermesAdapter(` call sites — e.g. `web/src/lib/**` thread store, `web/src/components/**`). If the active thread id is only available in a component, pass it through the adapter options. Keep `demo` mode untouched. NO other behavior changes.
+
+## Deliverable D — null-result safety
+
+`PlacesToolUI` (and any other place assuming a payload): ensure `result: null` (or a non-places payload) renders a graceful state (no crash, no error boundary). Minimal guard if missing — note it in evidence.
+
+## Deliverable E — docs
+
+- `web/.env.example`: add `HERMES_BACKEND_FLAVOR` with comments; add a commented `:8642` example (URL + KEY note, key server-side only).
+- `web/README.md`: new subsection "Backend flavors" — gateway vs hermes_api (env matrix; what changes in the stream; session header; result-fetch note; key stays server-side).
+
+## Tests & evidence (NO live :8642, NO key — mock it)
+
+1. `npm ci` inside `web/` if `node_modules` missing; then `npm run build` — record exit code.
+2. Write `web/scripts/test-flavor.mjs` using ONLY Node built-ins (no new npm deps): (a) a local mock upstream HTTP server (port 8799) that emits on POST /v1/chat/completions a realistic SSE: role chunk → content chunks → `event: hermes.tool.progress` running (tool `mcp__hermes_search__hermes_places`, toolCallId `call_1`) → content chunk → `event: hermes.tool.progress` completed → `event: hermes.status` → content chunks → `data: [DONE]`; and serves `GET /api/sessions/web-t1/messages` with a tool message (`tool_call_id: "call_1"`, content = JSON of a small valid hermes_places payload); (b) boots the Next dev server on port 3100 with env `HERMES_BACKEND_URL=http://127.0.0.1:8799/v1/chat/completions`, `HERMES_BACKEND_FLAVOR=hermes_api`, `HERMES_BACKEND_KEY=test-key`; (c) POSTs `/api/chat` with `{messages:[{role:"user",content:"test"}], threadId:"t1"}` and asserts the transformed frames: a tool `running` frame with name `hermes_places`; a tool `done` frame with `result.ok === true` and ≥1 place; a status frame; `[DONE]` last; `running` before `done` before `[DONE]`. Print PASS/FAIL per assertion; exit ≠0 on any FAIL; kill child processes.
+   - If booting `next dev` in the harness proves flaky/timeout-prone, fall back to unit-testing an EXPORTED pure transform function (move the frame-transform into `web/src/lib/sse-transform.ts`, import it in a `node --experimental-strip-types`-free way or duplicate via a small `.mjs` copy — but prefer the real e2e above; decide and note the choice).
+3. `agent_logs/r16g_evidence.md`: real outputs — npm ci/build exit codes, the full test output (or the unit-test run), `git diff --stat`. IMPORTANT: the key/flavor env used in tests is `test-key` (mock only) — never a real secret.
+4. Deferred to the orchestrator (state it in the evidence): the LIVE e2e against the real :8642 (with key), cancel/reconnect/error probes.
+
+## Constraints
+
+- Write ONLY under `web/**` plus `agent_logs/r16g_evidence.md`. Do NOT touch `searchstore/`, `gateway/`, `vn_geo/`, repo-root files.
+- npm installs inside `web/` only; commit no lockfile drift beyond what `npm ci` produces (if you add nothing, there should be none).
+- Do NOT git commit/push. No live :8642 calls, no real keys. Stay inside the worktree.
+- If a design point is ambiguous, choose the simplest robust option, DECIDE, and record the decision in the evidence file — do not stall.

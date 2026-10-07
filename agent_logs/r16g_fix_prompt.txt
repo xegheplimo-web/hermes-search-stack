@@ -1,0 +1,36 @@
+# r16-g FIX ROUND 1 — live-E2E mismatch: tool-result decode must go through ALL layers
+
+You are continuing your r16-g work (same worktree `E:/aoe-native-agent-worktrees/r16-g`, branch `r16-g`). Your implementation is accepted EXCEPT one confirmed defect. The orchestrator ran the live E2E you deferred (web prod build :3101 → REAL :8642, real key, real run — browse-mode places query returning 6 real rows). Everything works: session header, tool frames, order, `[DONE]`. One thing is wrong: the back-filled `result` shape.
+
+## Root cause (exact, evidence below)
+
+Your mock transcript content was `JSON.stringify(payload)`. The LIVE transcript tool message is NOT that. Live layers:
+
+1. An `<untrusted_tool_result source="…">…</untrusted_tool_result>` wrapper (Hermes wraps MCP tool output).
+2. The inner JSON object carries `result` as the payload *encoded as a JSON string* (double-encoded).
+
+Live done frame your proxy emitted (captured verbatim):
+
+```
+data: {"type":"tool","id":"call_00_2ahet5xe0u89sxehadsr1cel","name":"hermes_places","state":"done","result":{"result":"{\n  \"ok\": true,\n  \"kind\": \"places\",\n  \"query\": \"\",\n  \"area\": \"Yên Dũng\",\n  \"count\": 6,\n  \"places\": [ …6 real rows… ],\n  \"viewport\": null\n}"}}
+```
+
+`PlacesToolUI` can't render because `asPlacesPayload(result)` sees `{result:"…"}`, not `{ok:true, kind:"places", …}`. Non-MCP tools (e.g. `tool_describe`) store RAW JSON with no wrapper — that path already works; don't break it.
+
+Raw captured files in this worktree (read them):
+- `agent_logs/LIVE_TOOL_MESSAGE_SAMPLE.txt` — the exact raw transcript tool-message content (wrapper + double-encoded).
+- `agent_logs/LIVE_E2E_FRAMES_extract.txt` — the exact re-framed frames from the live proxied run (`tool_describe` done → raw `{"tools":…}`; `hermes_places` done → double-encoded; `[DONE]` last).
+
+## Required changes (minimal — only these files)
+
+1. `web/src/lib/sse-transform.ts` → `parseToolResultContent` — decode through ALL layers, in order:
+   - If the string contains an `<untrusted_tool_result …>` … `</untrusted_tool_result>` block: take the inner text (between the opening tag's `>` and the closing tag). No wrapper → keep as-is.
+   - `JSON.parse` that text (keep the existing bracket-locate fallback for prose-wrapped JSON).
+   - If the parsed value is an object whose ONLY key is `result` and that value is a string: `JSON.parse` the string; success → return it; failure → return the outer parsed object unchanged (never invent data).
+   - Any failure → `null` (as today). Do not change `extractToolResult`, the fetcher, or callers beyond what the above requires.
+2. `web/scripts/test-flavor.mjs` — make the mock REALISTIC:
+   - The `hermes_places` tool-message content must be EXACTLY the live shape: wrapper + `{"result": "<escaped payload json>"}`.
+   - Add a second tool message stored raw (no wrapper — a `tool_describe`-style `{"tools":{…}}` object) and assert it parses to that object (no double-unboxing, no null).
+   - Existing assertions must still pass; the places assertion must now exercise the real decode chain.
+3. Re-run BOTH: `node scripts/test-flavor.mjs` (all checks PASS) and `npm run build` (clean). Append a short `## Fix round 1` section to `agent_logs/r16g_evidence.md` with both command results.
+4. Constraints: touch ONLY `web/src/lib/sse-transform.ts`, `web/scripts/test-flavor.mjs`, and the evidence file. Do NOT change route.ts / adapter / chat-panel / places-tool-ui / env docs — they are verified and will merge as-is. Do NOT commit. Do not start any server beyond what the test script itself needs.
