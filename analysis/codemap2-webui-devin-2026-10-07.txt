@@ -1,0 +1,691 @@
+Skip to main content
+Hermes Search Stack: ChatGPT-like Web UI với Places/Map Integration
+Sharing
+Anyone with the link
+Open in Devin Desktop
+Traces
+Diagram
+Hermes Search Stack: ChatGPT-like Web UI với Places/Map Integration
+
+End-to-end architecture từ web UI (Next.js + assistant-ui + MapLibre) qua Hermes Agent API đến MCP gateway với 7 tools, xuống vn_geo data layer và SearchStore. Highlights: user query flow [1c→1f], hermes_places tool implementation [2d→2e], P0 entity_upsert bug [4c→4d], và MapLibre rendering [5e→5f].
+
+1
+End-to-End: User Query → Web UI → Gateway → Places Results → Map Render
+
+Full-stack flow từ browser qua Next.js API route, gọi gateway MCP tool hermes_places, query vn_geo, trả về và render với MapLibre. Spans: web/, gateway/mcp/, vn_geo/. See guide
+
+AI generated guide
+Motivation
+
+Hermes Search Stack cần một ChatGPT-style web interface để users có thể chat và nhận kết quả tìm kiếm địa điểm (places) với bản đồ tương tác. Problem: làm sao để kết nối một Next.js frontend với backend search/geo intelligence stack qua MCP protocol, và render structured place data (tên, rating, địa chỉ, tọa độ) thành interactive map với MapLibre giống như ChatGPT hiển thị restaurants?
+
+Stack hiện tại có sẵn:
+
+Gateway MCP server :8787 với 7 tools bao gồm hermes_places [1c]
+VN geo data layer với places database (8 pilot records từ Yên Dũng) [1e]
+SearchStore với FTS search và metadata filtering
+
+Cần: Web UI có thể gọi hermes_places, nhận structured response, và render cards + map với bidirectional sync.
+
+Details
+Architecture Flow
+
+Browser → Next.js → Gateway → VN Geo → UI Render
+
+Next.js API Route (/api/chat) acts as SSE proxy [1a]. Resolves HERMES_BACKEND_URL (default http://127.0.0.1:8787 gateway; W4 sẽ trỏ :8642 api_server) và forwards chat requests upstream.
+
+Client-side adapter [1b] POSTs to /api/chat, parses two types of SSE frames:
+
+OpenAI-style content chunks (backward compat)
+Hermes rich events: {type: "tool", name: "hermes_places", state: "done", result: {...}}
+
+Gateway MCP layer exposes hermes_places as 7th tool [1d][1c]. Tool signature: query, area, category, min_rating, count=8. Returns structured {ok, places[], viewport}.
+
+VN Geo execution [1e]: Opens data/places.db SearchStore, runs FTS search với metadata filters, enriches rows với phone/website/hours/thumbnail (R16-B addition), computes viewport bbox từ lat/lon coords.
+
+UI rendering [1f]: PlacesToolUI component renders:
+
+Left: Place cards với name, ★rating, category, address, phone, hours, thumbnail
+Right: MapLibre map (dynamic import, client-only) với markers
+Sync: Card click → flyTo marker + popup; marker click → highlight card + scrollIntoView
+Key Implementation Details
+
+Tool contract frozen (R16 §1): hermes_places always returns all top-level keys (ok, kind, query, area, count, places[], viewport). Place objects have 13 fields all present (nullable → None). Viewport = {center: [lon,lat], bbox: [min_lon, min_lat, max_lon, max_lat]} computed from coords.
+
+Places DB path: Explicit places_db override (tests) hoặc default <repo_root>/data/places.db. Currently 8 pilot rows từ Yên Dũng (offline fallback từ fixtures khi Overpass down).
+
+MapLibre integration: Loaded via next/dynamic với ssr: false để avoid server-side window access. Uses keyless demo tiles https://demotiles.maplibre.org/style.json. Degrades gracefully nếu tiles unreachable.
+
+W4 gap: Web hiện trỏ :8787 gateway trực tiếp. W4 sẽ swap env-only sang :8642 api_server cho rich events + sessions (no code change needed).
+
+Data Flow Summary
+User types "quán ăn Yên Dũng"
+  ↓
+Next.js /api/chat forwards to :8787
+  ↓
+Gateway calls hermes_places(query="quán ăn Yên Dũng")
+  ↓
+Opens data/places.db SearchStore
+  ↓
+FTS search + filter by area/category/rating
+  ↓
+Enrich with phone/website/hours from meta
+  ↓
+Compute viewport from lat/lon
+  ↓
+Return {places: [8 results], viewport: {center, bbox}}
+  ↓
+SSE stream: tool event with result
+  ↓
+PlacesToolUI parses + renders cards + MapLibre map
+  ↓
+User sees 8 place cards + 8 markers, clicks card → map flies to location
+
+
+Current limitations: Chỉ 8 pilot places (Yên Dũng area). Overpass refresh cần chạy để có ≥50 real places. Goong key chưa active (geocoding provider).
+
+Browser sends chat message
+Next.js API Route Handler
+1a
+Web API Route: Backend URL Resolution
+route.ts:41
+const backendUrl = process.env.HERMES_BACKEND_URL || DEFAULT_BACKEND_URL;
+Forward to gateway/api_server
+Client-side SSE Processing
+1b
+Client Adapter: SSE Parsing
+hermes-adapter.ts:1
+// ChatModelAdapter implementation
+POST to /api/chat
+Parse OpenAI SSE deltas
+Parse Hermes rich events
+Gateway MCP Layer
+1d
+Tool Registry: hermes_places in TOOL_NAMES
+tools.py:30
+"hermes_places",
+1c
+MCP Tool: hermes_places Entry Point
+tools.py:415
+def hermes_places(
+Resolve places.db path
+Open SearchStore
+Call vn_geo.places.query_places()
+1e
+VN Geo Layer: Places Module
+places.py:1
+"""vn_geo.places — scanned place records (Google Maps, OSM, Foody, manual).
+FTS search in SearchStore
+Filter by area/category/rating
+Enrich with phone/website/hours
+Return places[] + viewport
+Web UI Rendering
+1f
+UI Renderer: PlacesToolUI với MapLibre
+places-tool-ui.tsx:20
+const PlacesMap = dynamic(() => import("./places-map"), {
+Parse hermes_places result
+Render place cards (left)
+Dynamic import PlacesMap (right)
+Initialize MapLibre
+fitBounds from viewport
+Sync card ↔ marker interactions
+2
+MCP Tool Implementation: hermes_places Registration & Execution
+
+Gateway MCP layer: tool binding, places_db resolution, query_places call, viewport computation. Core của R16-W1. Spans: gateway/mcp/. See guide
+
+AI generated guide
+Motivation
+
+Hermes Agent cần expose 7 MCP tools qua gateway để web UI và external clients có thể gọi search, extract, research, và places queries. Tool hermes_places [2d] là tool thứ 7 được thêm trong R16 để trả về structured place data với lat/lon và viewport cho map rendering - khác với hermes_vn(kind="places") cũ chỉ trả FTS text results.
+
+Problem: MCP server cần frozen contracts (signatures không đổi) [2b], hermetic testing (monkeypatchable), và graceful degradation (missing DB → structured error, không crash). Gateway phải support multiple DB paths (production data/places.db vs test tmp paths) [2c].
+
+Details
+
+Tool registry định nghĩa 7 tool names [2a] và frozen parameters [2b]. hermes_places contract: required query, optional area/category/min_rating, default count=8.
+
+Binding flow (make_tools() function):
+
+Resolve places_db path [2c]: explicit override (tests) → else <repo_root>/data/places.db (8 pilot Yên Dũng rows hiện tại)
+Define hermes_places() callable [2d] that:
+Strips/validates query
+Clamps count to 1..50
+Opens SearchStore(places_path)
+Calls vn_geo.places.query_places() với filters
+Computes viewport (bbox + center) từ place coords
+Return tool dict [2e] với all 7 callables
+
+Registration: gateway/mcp/server.py loops qua tool dict values và registers chúng vào MCP server. Exposed via /mcp HTTP endpoint (MCP streamable HTTP protocol).
+
+Key design: Tool implementation never raises - mọi errors trả {"ok": false, "error": "..."}. DB resolution uses same pattern như hermes_store_query (store_db override). Call site monkeypatchable: from vn_geo import places as vn_places → tests patch vn_places.query_places.
+
+Tool Registry Definition
+2a
+Tool Names Tuple
+tools.py:23
+TOOL_NAMES: tuple[str, ...] = (
+2b
+Frozen Parameters Contract
+tools.py:48
+"hermes_places": {
+hermes_places contract
+Tool Binding (make_tools)
+2c
+Places DB Path Resolution
+tools.py:123
+overrides the default ``<repo_root>/data/places.db`` path for ``hermes_places``.
+places_db override or default
+2d
+Tool Implementation Function
+tools.py:415
+def hermes_places(
+query.strip() & validation
+count clamp (1..50)
+SearchStore(places_path) open
+vn_places.query_places() call
+viewport computation
+2e
+Tool Dict Registration
+tools.py:487
+"hermes_places": hermes_places,
+Registered to MCP server loop
+gateway/mcp/server.py
+Exposed via /mcp endpoint
+3
+VN Geo: query_places Execution với FTS + Enrichment
+
+vn_geo.places layer: FTS search trong SearchStore, metadata filtering (area/category/rating), R16-B enrichment (phone/website/hours/thumbnail). Spans: vn_geo/. See guide
+
+AI generated guide
+Motivation
+
+The vn_geo.places module solves the problem of querying Vietnamese place data (restaurants, businesses, POIs) from multiple sources (Google Maps, OSM, Foody) with Vietnamese-specific text handling and structured metadata filtering.
+
+The core challenge: Vietnamese text uses diacritics ("quán phở" vs "quan pho") and mixed rating formats ("4,8 sao 24 bài đánh giá" vs "4.8 stars 24 reviews"). Standard search fails without normalization [3a, 3b].
+
+Details
+Data Sources & Storage
+
+Places come from 4 supported sources [3a]: google-maps, osm, foody, and manual. Each place is stored as a versioned document in SearchStore with 5 tracked diff fields [3b]: name, rating, review_count, hours, and address. Changes to these fields create new document versions for audit trails.
+
+Vietnamese Text Normalization
+
+The _fold() function handles diacritic stripping: converts "đ"→"d", applies NFD normalization, removes combining characters, and casefolds. This enables "quán phở" to match "quan pho" in searches.
+
+Rating Label Parsing
+
+parse_rating_label() [3c] is the workhorse for extracting structured data from messy Vietnamese/English rating strings:
+
+Detects "no reviews" cases via regex [3c]: "Chưa có bài đánh giá" → (None, 0)
+Extracts rating: "4,8 sao" → 4.8 (handles comma decimal separators)
+Extracts count: "24 bài đánh giá" → 24 (strips formatting from numbers)
+
+Returns (rating: float | None, review_count: int | None) tuple.
+
+Query Flow
+
+query_places() performs FTS search on SearchStore with three filter layers:
+
+Text search via FTS5 (optional - can browse by area/category alone)
+Area filtering - matches against address/province fields
+Category filtering - matches category/kind/raw category fields
+Rating threshold - min_rating filter
+R16-B Enrichment
+
+The query returns 6 enriched fields per place (all nullable):
+
+source_id, phone, website, hours - straight from stored meta
+source_url - from meta.source_url or falls back to extra.url
+thumbnail - from meta.thumbnail or falls back to extra.thumbnail
+
+These fields were added in R16-B to support the web UI's place cards and are additive only - existing keys remain byte-identical.
+
+Deduplication
+
+place_key() generates stable identity: uses source_id if present, otherwise falls back to name|lat,lon hash. This enables the same physical place from different sources to be tracked separately while allowing exact-match deduplication within a source.
+
+Module Constants & Configuration
+3a
+Place Sources Definition
+places.py:28
+PLACE_SOURCES = frozenset({"google-maps", "osm", "foody", "manual"})
+3b
+Diff Fields for Versioning
+places.py:30
+DIFF_FIELDS = ("name", "rating", "review_count", "hours", "address")
+Helper Functions
+_fold() - diacritic normalization
+_to_float() / _to_int() converters
+3c
+Rating Parser
+places.py:73
+def parse_rating_label(label: str | None) -> tuple[float | None, int | None]:
+Parses VN/EN rating strings
+_NO_REVIEW_RE.search()
+_RATING_RE.search()
+_COUNT_RE.search()
+Key Generation
+place_key() - stable dedup key
+query_places() - Main Query Function
+SearchStore FTS search
+Metadata filtering (area/category)
+Rating filter application
+R16-B enrichment fields
+source_id, phone, website
+hours, source_url
+thumbnail (from meta/extra)
+CLI Commands
+save_places()
+diff()
+query() command
+4
+P0 Bug: Entity Upsert Meta-Only Change Drop
+
+SearchStore entity_upsert flow showing the P0 bug: meta-only changes (status/rating/coords) detected nhưng bị nuốt bởi ingest_document dedup check. Spans: searchstore/. See guide
+
+AI generated guide
+Motivation
+
+SearchStore cần theo dõi các thay đổi của business entities theo thời gian (ví dụ: một quán cà phê đóng cửa, rating thay đổi từ 4.5 → 4.7, hoặc tọa độ GPS được cập nhật). Hệ thống sử dụng content-addressed versioning: mỗi lần nội dung thay đổi, một document version mới được tạo ra, giữ lại lịch sử đầy đủ.
+
+Tuy nhiên, có một P0 bug nghiêm trọng: khi chỉ metadata thay đổi (như status, rating, lat/lng, website) mà searchable text không đổi, meta mới bị nuốt mất [4g]. Event vẫn được emit (entity_changed hoặc entity_closed) [4h] nhưng dữ liệu trong database không được cập nhật, gây ra data inconsistency.
+
+Details
+Entity Diff Fields vs Searchable Text
+
+ENTITY_DIFF_FIELDS [4a] định nghĩa 22 fields được theo dõi cho changes: name, status, rating, lat, lng, website, phone, category, v.v. [4a]
+
+Nhưng _entity_doc_text() [4b] chỉ đưa 8 fields vào searchable text: name, category_raw, category, address_text, area_old, province, phone, tax_code. Các fields như status, rating, lat/lng, website không nằm trong text hash.
+
+Bug Flow
+
+Khi entity_upsert() được gọi với entity đã tồn tại:
+
+Change detection loop [4c] so sánh 22 fields và tìm thấy changes (ví dụ: rating: 4.5 → 4.7)
+Nếu changes rỗng [4d], code UPDATE meta in-place trực tiếp → ĐÚNG
+Nếu có changes [4e], code gọi store.ingest_document() với merged meta [4e]
+ingest_document() tính content_sha256(text) [4f] và check duplicate bằng (url_key, content_sha256) [4f]
+Nếu text hash giống nhau (vì rating không nằm trong text), if row is not None: [4g] trả về doc_id cũ ngay lập tức [4g]
+Meta mới bị drop - không được lưu vào database
+Event vẫn được emit [4h], tạo ra mâu thuẫn: event nói "entity_changed" nhưng meta trong DB vẫn cũ
+Fix Recommendation
+
+Khi phát hiện changes nhưng text hash không đổi, cần UPDATE meta trực tiếp trên document hiện tại trước khi emit event, thay vì dựa vào ingest_document() dedup logic. Cần thêm regression test assert cả meta lưu trong DB chứ không chỉ event.
+
+entity_upsert() entry point
+find_entity() - dedupe lookup
+if no match found
+ingest_document() - new entity
+if match found (existing entity)
+4a
+Entity Diff Fields
+store.py:423
+ENTITY_DIFF_FIELDS = (
+4c
+Change Detection Loop
+store.py:652
+for field in ENTITY_DIFF_FIELDS:
+_entity_doc_text() call
+4b
+Searchable Text Generator
+store.py:546
+def _entity_doc_text(entity: dict) -> str:
+4d
+No-Change Fast Path
+store.py:666
+if not changes:
+UPDATE meta in-place (CORRECT)
+4e
+BUG: Changed Path Calls ingest_document
+store.py:670
+store.ingest_document(
+4e
+BUG: Changed Path Calls ingest_document
+store.py:670
+store.ingest_document(
+ingest_document()
+sha = content_sha256(text)
+4f
+BUG: Dedup Check (url_key, content_sha256)
+store.py:149
+row = self._conn.execute(
+4g
+BUG: Early Return Drops Meta
+store.py:152
+if row is not None:
+return doc_id (BUG!)
+4h
+Event Still Emitted
+store.py:678
+kind = "entity_closed" if merged.get("status") == "closed" and meta.get("status") != "closed" else "entity_changed"
+event emitted but meta lost!
+5
+Web UI: PlacesToolUI Rendering với MapLibre Integration
+
+Frontend rendering flow: parse hermes_places result, render place cards, initialize MapLibre map, sync card↔marker interactions. Spans: web/src/components/tools/. See guide
+
+AI generated guide
+Motivation
+
+Khi user hỏi "quán ăn Yên Dũng", hệ thống cần trả về danh sách địa điểm có bản đồ tương tác giống ChatGPT. Điều này yêu cầu:
+
+Parse kết quả structured từ MCP tool hermes_places [5a]
+Render place cards với thông tin đầy đủ (tên, rating, địa chỉ, giờ mở cửa, ảnh)
+Hiển thị MapLibre map với markers đồng bộ hai chiều với cards
+Xử lý client-only rendering (MapLibre không chạy được trên server)
+
+Web UI này là phần cuối của luồng: browser → Next.js → gateway MCP → vn_geo → trả về places[] + viewport → render interactive map.
+
+Details
+Component Structure
+
+PlacesToolUI [5e] là tool renderer chính, nhận part.result từ hermes_places tool call. Component import event types [5a] để parse payload thành HermesPlace[] với các field: name, rating, category, address, phone, hours, thumbnail, lat/lon.
+
+PlaceCard component render từng địa điểm với thumbnail (hoặc demo fallback [5c]), rating stars, category, address. Click handler [5d] trigger selection → map flyTo + popup.
+
+Client-Only Map Loading
+
+MapLibre GL JS không thể chạy trên server (cần DOM/canvas). Solution: dynamic(() => import("./places-map"), { ssr: false }) [5b] load map component chỉ trên client, với loading placeholder khi đang load.
+
+Bidirectional Sync
+
+Card → Map: User click card [5d] → setSelectedId → map component nhận selectedId prop → flyTo marker + show popup + highlight marker.
+
+Map → Card [5f]: User click marker → callback onMarkerClick(placeId) → setSelectedId → card highlight + scrollIntoView đưa card vào viewport.
+
+Viewport & FitBounds
+
+Tool result chứa viewport: {center: [lon, lat], bbox: [minLon, minLat, maxLon, maxLat]} computed từ tất cả places có coords. Map init với fitBounds(viewport.bbox) [5f] để hiển thị tất cả markers trong view.
+
+Demo Thumbnails
+
+Real place data chưa có thumbnails (source không cung cấp). UI dùng synthetic picsum URLs [5c] từ fixture cho demo, badge "demo image" để phân biệt với ảnh thật. Production sẽ có thumbnails từ sources.
+
+Graceful Degradation
+
+Nếu place không có lat/lon → không render marker (chỉ hiển thị trong list). Nếu không có place nào có coords → map block bị omit, chỉ render list.
+
+Component Imports & Setup
+5a
+Event Types Import
+places-tool-ui.tsx:8
+import { asPlacesPayload, type HermesPlace } from "@/lib/events";
+5b
+Dynamic Map Import
+places-tool-ui.tsx:20
+const PlacesMap = dynamic(() => import("./places-map"), {
+5c
+Demo Thumbnail Fallback
+places-tool-ui.tsx:35
+const demoThumb = place.thumbnail ? null : DEMO_THUMBNAILS[place.id];
+PlaceCard Component
+Card rendering with thumbnail
+5d
+Card Click Handler
+places-tool-ui.tsx:44
+onClick={onSelect}
+Rating, category, address display
+PlacesToolUI Main Component
+Parse tool result payload
+State: selected place, card refs
+Render place cards list
+5e
+MapLibre Map Component
+places-map.tsx:1
+// MapLibre GL JS map component
+Initialize MapLibre GL map
+fitBounds from viewport
+Add markers for places with coords
+Card click → flyTo + popup
+5f
+Bidirectional Sync Documentation
+README.md:92
+Card ↔ marker sync both ways; `fitBounds` from `payload.viewport`; card
+Bidirectional Sync
+Card → Map: flyTo, popup, highlight
+Map → Card: scrollIntoView, highlight
+6
+Rich Event Protocol: SSE Envelope Parsing & Rendering
+
+R16 §6 event protocol: SSE stream mixes OpenAI chunks + Hermes events (status/tool), adapter parses và maps to assistant-ui parts. Spans: web/src/lib/, web/src/components/. See guide
+
+AI generated guide
+Rich Event Protocol: SSE Streaming với Tool Results
+Motivation
+
+Web UI cần hiển thị real-time progress khi Hermes Agent đang chạy tools như hermes_places - không chỉ đợi kết quả cuối mà còn show được "đang tìm kiếm...", "đang gọi tool X...", "tool hoàn thành" với kết quả structured. Vấn đề: OpenAI SSE protocol chỉ có text chunks, không có cách chuẩn để stream tool execution state và structured results (như place objects với lat/lon cho map rendering).
+
+Giải pháp: Rich event envelope - SSE stream mixes hai loại frames: OpenAI-style content chunks (backward compat) + Hermes event frames (status, tool) [6a, 6b, 6c]. Frontend adapter parses cả hai, maps sang assistant-ui parts, và routes đến specialized renderers.
+
+Details
+
+Event envelope có 2 frame types được document trong web/README.md §6:
+
+Status frames [6a]: {"type": "status", "label": "Searching places..."} - progress updates hiển thị như "◉ label..." khi đang chạy, "✓ label" khi xong
+Tool frames: {"type": "tool", "id": "call-1", "name": "hermes_places", "state": "running"|"done", "args": {...}, "result": {...}} [6b, 6c] - tool execution lifecycle với full structured result
+
+Adapter layer (hermes-adapter.ts) POSTs to /api/chat, parses SSE stream, và yields cumulative snapshots. Key responsibility: protocol translation - tool frames become tool-call parts với toolCallId/toolName/args/result, status frames become data parts.
+
+Rendering routing [6d]: MessagePrimitive.Parts với tools.by_name["hermes_places"] → PlacesToolUI, data.by_name["status"] → ResearchStatusUI. Parts ordered [statuses, text, tools] nên status line sits above message text.
+
+PlacesToolUI [6e] receives frozen hermes_places result shape (§1 contract: {ok, kind, query, places[], viewport}), renders place cards với name/rating/category/address/phone/hours/thumbnail, và MapLibre map với card↔marker bidirectional sync + fitBounds from viewport.
+
+W4 integration gap: hiện web defaults to :8787 gateway (direct MCP), W4 sẽ point to :8642 api_server cho session/run management + richer events - env-only swap HERMES_BACKEND_URL, no code change needed.
+
+SSE Stream từ Backend
+OpenAI-style content chunks
+Hermes event frames
+6a
+Status Event Frame
+README.md:69
+{"type": "status", "label": "<progress text>"}
+{"type": "status", "label": "..."}
+Tool frames
+6b
+Tool Event Frame (Running)
+README.md:71
+{"type": "tool", "id": "call-1", "name": "hermes_places", "state": "running", "args": {…}}
+{"state": "running", "args": {...}}
+6c
+Tool Event Frame (Done)
+README.md:72
+{"type": "tool", "id": "call-1", "name": "hermes_places", "state": "done", "args": {…}, "result": {…}}
+{"state": "done", "result": {...}}
+Adapter Layer (hermes-adapter.ts)
+Parse SSE deltas
+Map to assistant-ui parts
+Tool frames → tool-call parts
+Status frames → data parts
+UI Rendering Layer
+6d
+Part Renderer Mapping
+README.md:84
+`MessagePrimitive.Parts`: `tools.by_name["hermes_places"]` → `PlacesToolUI`,
+tools.by_name["hermes_places"]
+6e
+PlacesToolUI Renderer
+README.md:88
+- **`PlacesToolUI`** (`components/tools/places-tool-ui.tsx`) — left: place
+Place cards (name/rating/...)
+MapLibre map
+6f
+ResearchStatusUI Renderer
+README.md:96
+- **`ResearchStatusUI`** — subtle line per status frame: `◉ <label>…` while
+◉ in-flight → ✓ settled
+7
+W4 Integration Gap: Web → :8787 Gateway vs Future :8642 API Server
+
+Current state: web defaults to :8787 gateway. W4 goal: trỏ :8642 api_server cho rich events + sessions. Env-only swap, no code change. Spans: web/, analysis/. See guide
+
+AI generated guide
+Motivation
+
+The web UI hiện tại kết nối trực tiếp đến gateway :8787 để gọi MCP tools [7a]. Đây là kiến trúc tạm thời cho R16 demo. Vấn đề: gateway là stateless - không có sessions, không có conversation history, không có run artifacts. Mỗi request là độc lập.
+
+W4 cần chuyển sang Hermes API Server :8642 [7b] - một layer có đầy đủ session management, run tracking, và artifact storage. Đây là kiến trúc production đúng: web UI → api_server (sessions/runs) → MCP client → gateway (tools).
+
+Details
+
+Current state (W1-W3 DONE):
+
+Web UI defaults HERMES_BACKEND_URL to http://127.0.0.1:8787/v1/chat/completions [7a]
+/api/chat route proxies requests trực tiếp đến gateway
+Gateway trả về OpenAI-compatible responses + rich events (status/tool frames)
+Không có sessions - mỗi chat thread chỉ tồn tại trong browser localStorage
+
+W4 target architecture:
+
+Chỉ cần đổi env var: HERMES_BACKEND_URL=http://127.0.0.1:8642/v1/chat/completions [7b]
+Không sửa code - proxy route đã được thiết kế để hoạt động với cả hai backends [7b]
+API server :8642 sẽ quản lý sessions/runs, gọi MCP tools qua internal client, và emit rich events
+Web UI nhận cùng SSE protocol, render giống hệt
+
+W4 scope:
+
+Hardening: auth, CORS cho localhost, rate limiting [7c]
+E2E acceptance: cancel, reconnect, error handling
+Ledger hóa các probes đã PASS (r16w4_probe_sse.raw đã verify api_server → MCP flow) [7e]
+
+Tại sao chưa đóng: W1-W3 tập trung vào proving the UI works với demo data. W4 là production wiring - cần careful testing của session lifecycle, error cases, và security boundaries [7d].
+
+Current Architecture (Production)
+Web UI (Next.js)
+7a
+Current Default: :8787 Gateway
+README.md:28
+| `HERMES_BACKEND_URL` | `http://127.0.0.1:8787/v1/chat/completions` | OpenAI-compatible endpoint (local gateway) |
+Default: :8787 gateway
+/api/chat route.ts
+Proxies to backendUrl
+Gateway :8787
+MCP tools (no sessions)
+W4 Target Architecture (Planned)
+Web UI (unchanged code)
+7b
+W4 Target: :8642 API Server
+README.md:54
+**Backend swap:** the same proxy works unchanged against the future Hermes
+HERMES_BACKEND_URL → :8642
+Same proxy, no code edits
+Hermes API Server :8642
+Sessions + runs + artifacts
+Rich events → MCP → Gateway :8787
+W4 Status & Evidence
+7c
+W4 Plan: Full-Stack Wiring
+r16-plan.md:11
+Next: W4 hardening + full-stack wiring (web → api_server rich events → MCP live render).
+auth/CORS/rate-limit/reconnect
+7d
+Audit Status: W4 Pending
+audit-full-2026-10-07.md:16
+- **R16:** W1 ✓ W1.5 ✓ W2 ✓ W3 ✓ — web UI build + SSE demo/chat + Playwright 8 markers/8 cards, 0 console errors. **W4 (hardening + full-stack wiring)** là bước kế tiếp; đã có probe E2E thật (`r16w4_*`, 17:05–17:13) nhưng chưa thành ledger chính thức.
+7e
+W4 Probe Evidence
+audit-full-2026-10-07.md:84
+| `r16w4_probe_sse.raw` (api_server run-events, session `webui-probe-1`, gọi MCP `hermes_places` thật) | PASS — run.completed, 89.5 KB |
+r16w4_probe_sse.raw (89.5 KB)
+route.ts
+hermes-adapter.ts
+tools.py
+places.py
+places-tool-ui.tsx
+events.ts
+places-map.tsx
+server.py
+store.py
+README.md
+r16-plan.md
+audit-full-2026-10-07.md
+web
+src
+app
+api
+chat
+route.ts
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+import { NextRequest } from "next/server";
+// Thin server-side proxy: browser -> /api/chat -> OpenAI-compatible 
+backend.
+// The backend key never leaves the server (no NEXT_PUBLIC_* env vars).
+const DEFAULT_BACKEND_URL = "http://127.0.0.1:8787/v1/chat/completions";
+const DEFAULT_MODEL = "hermes-search";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+type IncomingMessage = { role: string; content: string };
+function sseHeaders(): HeadersInit {
+  return {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    // Disable buffering in reverse proxies (nginx etc.)
+    "x-accel-buffering": "no",
+  };
+}
+function sseError(message: string): Response {
+  const payload = `data: ${JSON.stringify({ error: { message } })}
+  \n\ndata: [DONE]\n\n`;
+  return new Response(payload, { status: 502, headers: sseHeaders() });
+}
+export async function POST(req: NextRequest) {
+  let body: { messages?: IncomingMessage[] };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return Response.json({ error: "messages must be a non-empty array" }, 
+    { status: 400 });
+  }
+  const backendUrl = process.env.HERMES_BACKEND_URL || DEFAULT_BACKEND_URL;
+  const model = process.env.HERMES_BACKEND_MODEL || DEFAULT_MODEL;
+  const backendKey = process.env.HERMES_BACKEND_KEY;
+  const headers: Record<string, string> = { "content-type": "application/
