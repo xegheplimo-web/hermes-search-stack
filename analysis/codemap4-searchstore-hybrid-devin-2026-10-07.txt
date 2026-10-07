@@ -1,0 +1,343 @@
+Skip to main content
+SearchStore Semantic Retrieval Infrastructure & R18 Integration Gap
+Sharing
+Only me
+Open in Devin Desktop
+Traces
+Diagram
+SearchStore Semantic Retrieval Infrastructure & R18 Integration Gap
+
+Maps the complete hybrid retrieval infrastructure in SearchStore (FTS5 + vector + RRF) and the intentional blocks in Gateway MCP tools that prevent its use due to missing embedding production. Key locations: hybrid search RRF fusion [1d], MCP tool error gate [2b], single-vector schema constraint [3c], migration extension pattern [4c].
+
+1
+Hybrid Search Execution Path (SearchStore)
+
+SearchStore core module - shows the complete hybrid retrieval flow exists: FTS5 top-50 + vector top-50 → RRF fusion → ranked results. See guide
+
+AI generated guide
+Motivation
+
+SearchStore implements hybrid retrieval to combine the strengths of two search paradigms: traditional keyword search (BM25) excels at exact matches and specific terms, while vector similarity search captures semantic meaning and handles paraphrases. The problem: neither approach alone is optimal—keyword search misses semantically similar content, while pure vector search can miss exact terminology matches. Hybrid search solves this by fusing both result sets using Reciprocal Rank Fusion (RRF), a rank-based algorithm that doesn't require score normalization.
+
+Details
+Entry and Validation
+
+The hybrid path activates when mode="hybrid" is passed to SearchStore.search() [1a]. The method immediately validates that query_vector is provided—hybrid mode is impossible without an embedding of the user's query [1a]. If missing, it raises SearchStoreError with an actionable message.
+
+Dual Retrieval
+
+The system performs two independent searches in parallel conceptually [1b, 1c]:
+
+FTS5 search: Retrieves top-50 documents using SQLite's full-text search with BM25 ranking [1b]
+Vector search: Retrieves top-50 documents using cosine similarity against the embeddings table [1c]
+
+Both searches use a fixed limit of 50 (not the user's requested limit) to provide sufficient candidate diversity for fusion.
+
+RRF Fusion
+
+The core fusion logic uses Reciprocal Rank Fusion with k=60 [1d]. For each document appearing in either result set, the algorithm accumulates scores using the formula 1/(60 + rank) where rank is 1-based position. Documents appearing in both result sets receive contributions from both rankings, naturally boosting their final scores. The constant k=60 is a standard RRF parameter that balances the influence of top-ranked vs. lower-ranked results.
+
+Final Ranking
+
+After fusion, documents are sorted by their accumulated RRF scores in descending order [1e], and the top N results (user's requested limit) are returned. Each result includes the fused score, allowing downstream systems to assess retrieval confidence.
+
+Implementation Note
+
+The hybrid infrastructure is fully implemented and tested in SearchStore, but currently unused in production because the Gateway layer lacks an embedding client to generate query vectors—this is the R18 integration gap.
+
+Entry: mode parameter check
+1a
+Hybrid mode entry point
+store.py:254
+if mode == "hybrid":
+Require query_vector validation
+raise if query_vector is None
+FTS5 retrieval (top 50)
+1b
+FTS5 retrieval (top 50)
+store.py:258
+fts_hits = self._fts_search(query, limit=50, snippet_len=snippet_len, mode_used="hybrid")
+BM25 ranking via documents_fts
+Vector retrieval (top 50)
+1c
+Vector retrieval (top 50)
+store.py:259
+vec_hits = vectors.similar(self._conn, query_vector, k=50)
+Cosine similarity search
+RRF fusion loop
+Score FTS hits by rank
+1d
+RRF fusion scoring
+store.py:262
+rrf[hit["doc_id"]] = rrf.get(hit["doc_id"], 0.0) + 1.0 / (60 + rank)
+Accumulate: 1/(60+rank)
+Final ranking
+1e
+Final ranking output
+store.py:267
+for doc_id, score in sorted(rrf.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]:
+Return top N results
+Alternative: mode == "fts"
+Direct FTS5 search only
+2
+MCP Tool Intentional Block on Hybrid Mode
+
+Gateway MCP tools module - hermes_store_query explicitly rejects hybrid/vector modes because the tool cannot supply query embeddings. See guide
+
+AI generated guide
+Motivation
+
+SearchStore has a complete hybrid retrieval system (FTS5 + vector similarity + RRF fusion) that can dramatically improve search quality over keyword-only matching. However, the Gateway's MCP tools intentionally block agents from using it [2b]. The problem: hybrid mode requires a query embedding vector, but no embedding client exists in the Gateway to produce one. This creates a gap where the infrastructure is ready but unusable.
+
+Details
+The Block
+
+When an agent calls hermes_store_query() [2a], the tool normalizes the mode parameter. If the user requests "auto", it silently maps to "fts" [2d]. If they explicitly request "hybrid" or "vector", the tool rejects the request with a structured error [2b, 2c]: "mode 'hybrid' requires a query vector; use 'fts' or 'auto'".
+
+This is not a bug—it's a deliberate design decision. The MCP tool has no way to generate embeddings from the query text, so it cannot supply the query_vector parameter that SearchStore's hybrid mode requires.
+
+The Execution
+
+After validation, the tool hardcodes mode="fts" when calling SearchStore [2e], regardless of what the user originally requested. This ensures the system degrades gracefully: agents can still search, but only via keyword matching.
+
+Why This Matters
+
+The block exists at the service boundary between Gateway (which agents call) and SearchStore (which has the retrieval logic). SearchStore's hybrid search works perfectly when given a query vector—the RRF fusion, vector similarity, and ranking are all implemented. The missing piece is an embedding producer in the Gateway that can transform text queries into vectors before calling SearchStore.
+
+make_tools() factory
+2a
+MCP store query tool
+tools.py:350
+def hermes_store_query(query: str, limit: int = 10, mode: str = "auto") -> dict:
+mode normalization
+2d
+Auto mode fallback
+tools.py:357
+if norm == "auto":
+norm = "fts"
+2b
+Hybrid/vector mode gate
+tools.py:359
+if norm in ("hybrid", "vector"):
+2c
+Error message to caller
+tools.py:363
+error: f"mode {mode!r} requires a query vector; use 'fts' or 'auto'"
+"requires a query vector"
+SearchStore execution
+2e
+FTS-only execution
+tools.py:381
+hits = store.search(query, limit=limit, mode="fts")
+(hardcoded FTS-only)
+3
+Embedding Storage Single-Vector Constraint
+
+SearchStore vectors module - shows doc_id PRIMARY KEY constraint limits each document to one embedding, blocking multi-model or MRL scenarios. See guide
+
+AI generated guide
+Motivation
+
+SearchStore needs to store vector embeddings for semantic search—each document can have a numerical representation (e.g., a 2560-dimensional float array) that enables similarity-based retrieval beyond keyword matching. The current schema enforces a one-vector-per-document constraint [3e] that blocks important use cases: storing embeddings from multiple models simultaneously, keeping different matryoshka representation learning (MRL) dimension variants of the same model, or A/B testing embedding approaches without destroying existing data.
+
+This constraint exists because doc_id is the PRIMARY KEY in the embeddings table [3e], meaning any new embedding for the same document replaces the previous one [3c] rather than coexisting alongside it.
+
+Details
+Current Storage Flow
+
+When you call SearchStore.add_embedding() [3a], it delegates to vectors.add_embedding() which validates the input vector and executes an INSERT OR REPLACE statement [3b][3c]. The "REPLACE" semantics mean that if doc_id=123 already has an embedding, inserting a new one for doc_id=123 will overwrite the old row entirely—even if the new embedding uses a different model name or dim count.
+
+Schema Definition
+
+The embeddings table schema [3d] is defined in _MIGRATION_1 [3d], the first and only migration applied when a new SearchStore database is created. The critical line is doc_id INTEGER PRIMARY KEY [3e], which creates a unique constraint on document IDs. The table also stores model, dim, and the binary-packed vector blob, but these fields don't participate in uniqueness—only doc_id does.
+
+Why This Matters for R18
+
+To integrate pplx-embed-v1-4b (a 4B-parameter embedding model with 2560 dimensions and MRL support), the project needs to:
+
+Store embeddings from this model without destroying any future embeddings from other models
+Support MRL by storing multiple dimension variants (2560d, 1024d, 512d) of the same document simultaneously
+Enable A/B testing where the same document has embeddings from competing models for benchmark comparison
+
+The current doc_id PRIMARY KEY design makes all of these impossible. The solution is migration v2 that changes the primary key to (doc_id, profile) where profile encodes model+revision+dimension, allowing multiple embeddings per document to coexist.
+
+3a
+Public embedding API
+store.py:384
+def add_embedding(self, doc_id: int, vector: list[float], *, model: str = "unknown") -> None:
+vectors.add_embedding()
+_validate_vector()
+3b
+Embedding insert call
+vectors.py:99
+conn.execute(
+3c
+Replace-by-doc_id behavior
+vectors.py:100
+"INSERT OR REPLACE INTO embeddings(doc_id, model, dim, vector, created_at) VALUES(?, ?, ?, ?, ?)",
+conn.commit()
+Schema Definition (db.py)
+_MIGRATION_1
+3d
+Embeddings table DDL
+db.py:130
+CREATE TABLE IF NOT EXISTS embeddings(
+3e
+Primary key constraint
+db.py:131
+doc_id INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+model TEXT NOT NULL
+dim INTEGER NOT NULL
+vector BLOB NOT NULL
+INSERT OR REPLACE by doc_id
+Same doc_id → overwrites previous
+Different model → replaces old vector
+MRL dimensions → cannot coexist
+4
+Schema Migration Extension Pattern
+
+SearchStore db module - shows the append-only migration pattern ready for v2: _MIGRATION_2 appended to _MIGRATIONS list, SCHEMA_VERSION bumped. See guide
+
+AI generated guide
+Motivation
+
+SearchStore is a SQLite-based document storage layer that needs to evolve its schema over time without breaking existing databases. When new features are added (like changing the embeddings table from single-vector to multi-vector support), the system must migrate existing .db files safely while preserving all data and maintaining backward compatibility.
+
+The problem: users have production databases with schema v1. When they upgrade the code, the system must detect the old schema and automatically apply v2 changes without manual intervention and without data loss.
+
+Details
+Schema Version Tracking
+
+SearchStore uses SQLite's PRAGMA user_version to track which migrations have been applied [4d]. The current version is 1 [4a], stored as a module constant SCHEMA_VERSION.
+
+Append-Only Migration Pattern
+
+Migrations are stored in an append-only list _MIGRATIONS = [_MIGRATION_1] [4b]. Each migration is a SQL DDL string. To add schema v2:
+
+Create _MIGRATION_2 with new SQL (e.g., changing embeddings PRIMARY KEY from doc_id to (doc_id, profile))
+Append it to the list: _MIGRATIONS = [_MIGRATION_1, _MIGRATION_2]
+Bump SCHEMA_VERSION = 2 [4a]
+
+Never edit existing migrations — history is immutable.
+
+Migration Execution
+
+When SearchStore.__init__() opens a database, it calls db.migrate() [4c]. The migration loop:
+
+Reads current user_version from the database [4d]
+Iterates through _MIGRATIONS with 1-based indexing [4c]
+Skips already-applied migrations (if applied >= idx) [4d]
+Executes unapplied SQL via executescript() [4c]
+Updates user_version to the new index [4e]
+Records a migration_applied event for audit [4f]
+
+This is idempotent: running migrate() multiple times is safe — already-applied migrations are skipped.
+
+Current Schema Constraint
+
+The v1 embeddings table uses doc_id INTEGER PRIMARY KEY [3e], which limits each document to one embedding. This blocks multi-model scenarios (e.g., storing both pplx-embed-v1-4b:d2560 and pplx-embed-v1-4b:d1024 for the same document). Migration v2 would change this to PRIMARY KEY(doc_id, profile) to support multiple embeddings per document.
+
+db.py module constants
+4a
+Current schema version
+db.py:19
+SCHEMA_VERSION = 1
+4b
+Migration list
+db.py:146
+_MIGRATIONS = [_MIGRATION_1]
+_MIGRATION_1 (SQL DDL string)
+embeddings table definition
+doc_id PRIMARY KEY
+migrate() function
+PRAGMA user_version (read applied)
+4c
+Migration loop
+db.py:213
+for idx, sql in enumerate(_MIGRATIONS, start=1):
+4d
+Idempotency check
+db.py:214
+if applied >= idx:
+conn.executescript(sql)
+4e
+Version tracking
+db.py:217
+conn.execute(f"PRAGMA user_version = {idx}")
+4f
+Migration event audit
+db.py:219
+"INSERT INTO events(ts, kind, payload) VALUES(?,?,?)",
+migrate_fts_standalone()
+SearchStore.__init__()
+db.migrate(self._conn)
+(migration loop executes)
+5
+Vector Tier Selection and Fallback Chain
+
+SearchStore vectors module - shows 3-tier backend selection (sqlite-vec → numpy → pure Python) ensuring zero-dependency operation. See guide
+
+AI generated guide
+Motivation
+
+SearchStore needs to perform vector similarity search over document embeddings to enable semantic retrieval, but it must work in three different deployment scenarios: (1) systems with the sqlite-vec extension installed, (2) systems with numpy but no SQLite extensions, and (3) minimal environments with only Python stdlib. The code solves this by implementing a 3-tier fallback chain where each tier provides the same cosine similarity functionality but with different performance characteristics [5a].
+
+The design ensures SearchStore remains zero-dependency at its core—the pure Python tier using struct and math is always available, while the faster tiers activate opportunistically when their dependencies are present.
+
+Details
+Tier Selection
+
+The similar() function [5a] validates the input vector and then attempts each tier in priority order. It first checks if sqlite_vec is both imported and loadable into the connection [5b]. If that fails, it checks for numpy availability [5c]. If neither optional dependency exists, it falls back to the pure Python implementation [5d].
+
+Tier 1: sqlite-vec Extension
+
+When available, _similar_sqlite_vec() delegates the entire similarity computation to SQLite's native vec_distance_cosine() function, which operates directly on the BLOB column without round-tripping vectors to Python. This is the fastest path because the computation happens in compiled C code within the database engine.
+
+Tier 2: numpy Vectorized
+
+The numpy tier uses np.frombuffer() to deserialize vectors from the database BLOBs, then computes norms with np.linalg.norm() and dot products with np.dot(). This is significantly faster than pure Python for high-dimensional vectors due to vectorized operations, but slower than native SQLite.
+
+Tier 3: Pure Python Floor
+
+The final fallback uses struct.unpack() to deserialize float32 vectors and math.fsum() to compute dot products with exact floating-point summation [5e]. While this is the slowest option, it guarantees SearchStore can perform vector search in any Python 3.11+ environment without external dependencies—critical for CI, minimal containers, and edge deployments.
+
+All three tiers produce identical results (cosine similarity scores clamped to [-1, 1]) and return the same data structure, making the tier selection completely transparent to callers.
+
+5a
+Vector search entry point
+vectors.py:152
+def similar(conn: sqlite3.Connection, vector: Any, k: int = 10) -> list[dict]:
+validate_vector()
+Tier 1: sqlite-vec extension
+5b
+Tier 1: sqlite-vec
+vectors.py:157
+if sqlite_vec is not None and _sqlite_vec_ready(conn):
+_similar_sqlite_vec()
+vec_distance_cosine() SQL
+Tier 2: numpy vectorized
+5c
+Tier 2: numpy
+vectors.py:161
+if np is not None:
+_similar_numpy()
+np.frombuffer(blob)
+np.linalg.norm()
+np.dot() / norms
+5d
+Tier 3: pure Python
+vectors.py:163
+return _similar_python(conn, query, k)
+_similar_python()
+struct.unpack() vectors
+math.sqrt() for norms
+5e
+Pure Python cosine
+vectors.py:146
+score = math.fsum(a * b for a, b in zip(query, vec, strict=True)) / (q_norm * v_norm)
+store.py
+tools.py
+vectors.py
+db.py
+searchstore
+store.py

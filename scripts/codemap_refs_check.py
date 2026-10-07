@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Crosscheck v2 — snippet = FIRST line after ref chip only; descriptive anchors
+"""Crosscheck v3 — snippet = FIRST line after ref chip only; descriptive anchors
 (comments/annotations, no code punctuation) are marked DESC and not counted as errors.
 Binary files (db) marked BINARY.
+Usage: python scripts/codemap_refs_check.py [codemap-file]  (default: codemap4)
 """
 
 import os
@@ -9,7 +10,11 @@ import re
 import sys
 
 REPO = r"C:/Users/atton/hermes-search-stack"
-CM = os.path.join(REPO, "analysis", "codemap3-gateway-webui-devin-2026-10-07.txt")
+CM = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else os.path.join(REPO, "analysis", "codemap4-searchstore-hybrid-devin-2026-10-07.txt")
+)
 
 CAND = {
     "app.py": ["gateway/app.py"],
@@ -30,6 +35,9 @@ CAND = {
     "places-map.tsx": ["web/src/components/tools/places-map.tsx"],
     "tools.py": ["gateway/mcp/tools.py"],
     "places.py": ["vn_geo/places.py"],
+    "store.py": ["searchstore/store.py"],
+    "vectors.py": ["searchstore/vectors.py"],
+    "db.py": ["searchstore/db.py"],
     "README.md": ["web/README.md", "README.md"],
     "places.db": ["data/places.db"],
 }
