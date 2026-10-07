@@ -4,7 +4,7 @@
 ("Hermes Search Stack: Gateway Engine (xhigh/ultra), Web UI, VN Local Data"; sharing "Only me")
 · **HEAD lúc check:** `76523c7`
 **Phương pháp:** tải full codemap qua trình duyệt thật (Chrome debug, profile đăng nhập — 605 dòng)
-→ script spot-check refs (`cache/scratch/codemap3_refs_check2.py`: resolve file, window ±3 dòng, whitespace-normalized)
+→ script spot-check refs (`scripts/codemap_refs_check.py`: resolve file, window ±3 dòng, whitespace-normalized)
 + kiểm tay các case biên (README disambiguation, docstring ±1, inline refs).
 
 ---
@@ -61,6 +61,6 @@
 ## 5. Files
 
 - `analysis/codemap3-gateway-webui-devin-2026-10-07.txt` — snapshot full (605 dòng).
-- `cache/scratch/codemap3_refs_check2.py` — script spot-check (ngoài repo, Hermes scratch).
+- `scripts/codemap_refs_check.py` — script spot-check (tracked trong repo; bản chạy gốc từ Hermes scratch).
 - Codemap liên quan: #1 `analysis/codemap-devin-2026-10-07.txt` · #2
   `analysis/codemap2-webui-devin-2026-10-07.txt` + `analysis/codemap2-crosscheck-2026-10-07.md`.
