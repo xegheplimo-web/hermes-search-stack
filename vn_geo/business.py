@@ -31,7 +31,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from searchstore import SearchStore, SearchStoreError
@@ -387,13 +387,90 @@ def _seed_hosts_for(area_cfg: dict, connectors: dict[str, Any]) -> list[tuple[st
     return hosts
 
 
+# geocode attempt-tracking (R14-E): a per-entity marker in the store's ``kv``
+# table bounds how often a coordinate-less record is re-geocoded. The incoming
+# connector record never gains coordinates, so a re-run would otherwise retry
+# every failure forever (≈1.3k records × 1.5 s ≈ 50 min). Markers make re-runs
+# cheap: an attempt is skipped when the stored entity is already enriched or
+# when a marker is younger than ``business_geocode_retry_days``.
+_GEOCODE_MARKER_PREFIX = "geocode_attempted:"
+
+
+def _geocode_retry_days(cfg: dict) -> float:
+    """Optional ``business_geocode_retry_days`` (days, default 7); non-numeric
+    values fall back to the default so a bad config never disables retries."""
+    value = cfg.get("business_geocode_retry_days", 7)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 7.0
+
+
+def _geocode_marker_key(entity_id: str) -> str:
+    return _GEOCODE_MARKER_PREFIX + entity_id
+
+
+def _entity_has_coords(meta: dict) -> bool:
+    return meta.get("lat") is not None and meta.get("lng") is not None
+
+
+def _geocode_marker_is_fresh(conn, entity_id: str, retry_days: float) -> bool:
+    """True when a marker exists for *entity_id* and its age < *retry_days*.
+
+    An absent (or unparseable) marker is NOT fresh, so the record is attempted.
+    """
+    if not entity_id:
+        return False
+    row = conn.execute("SELECT value FROM kv WHERE key = ?", (_geocode_marker_key(entity_id),)).fetchone()
+    if row is None or not row["value"]:
+        return False
+    try:
+        stamped = datetime.fromisoformat(str(row["value"]))
+    except (TypeError, ValueError):
+        return False
+    if stamped.tzinfo is None:
+        stamped = stamped.astimezone()
+    age_days = (datetime.now(UTC) - stamped).total_seconds() / 86400.0
+    return age_days < retry_days
+
+
+def _record_geocode_attempt(conn, entity_id: str) -> None:
+    """Persist the ISO-8601 UTC attempt marker for *entity_id*.
+
+    Written after EVERY real attempt (success or failure) so a previously
+    attempted record is not retried within the window.
+    """
+    if not entity_id:
+        return
+    with conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)",
+            (_geocode_marker_key(entity_id), datetime.now(UTC).isoformat(timespec="seconds")),
+        )
+
+
+def _carry_stored_coords(entity: dict, stored_meta: dict) -> None:
+    """Copy an already-enriched stored entity's coordinates onto the incoming
+    entity so a geocode-skip re-upsert adds zero new document versions."""
+    for field in ("lat", "lng", "geocode_status", "confidence"):
+        if stored_meta.get(field) is not None:
+            entity[field] = stored_meta[field]
+
+
 def seed_from_config(config_path: str, db_path: str, max_entities: int | None = None) -> dict:
     """Seed the entity store from a refresh-areas config (§4 CLI contract).
 
     Per area: run connector ``fetch()`` -> ``normalize()`` -> ``geocode()``
     (only for records WITHOUT coordinates) -> ``upsert_entity()``. Idempotent:
     re-running an unchanged config and source data adds 0 rows (dedupe §2).
-    Returns a summary dict for the CLI payload.
+
+    Geocoding is bounded by an attempt marker (``kv`` key
+    ``geocode_attempted:<entity_id>``): a coordinate-less record is re-geocoded
+    only when its marker is absent or older than ``business_geocode_retry_days``
+    (default 7) AND the stored entity (same ``entity_id``) has no coordinates
+    yet. Skipped attempts add no document version. Returns a summary dict for
+    the CLI payload (``geocoded``, ``geocode_skipped_recent``,
+    ``geocode_skipped_enriched`` per area and in total).
     """
     cfg = _load_area_config(config_path)
     if cfg.get("business_enabled") is False:
@@ -402,46 +479,94 @@ def seed_from_config(config_path: str, db_path: str, max_entities: int | None = 
     if not connectors:
         raise VnGeoError("seed: no connectors available (expected connectors_masothue / connectors_ckan_ext)")
     geocode_missing = bool(cfg.get("business_geocode_missing", True))
+    retry_days = _geocode_retry_days(cfg)
     totals: dict[str, Any] = {"areas": []}
     seeded = 0
-    for area_cfg in cfg["areas"]:
-        if not isinstance(area_cfg, dict) or not area_cfg.get("name"):
-            continue
-        area_name = str(area_cfg["name"])
-        province = str(area_cfg.get("province") or "")
-        area_summary = {"area": area_name, "fetched": 0, "seeded": 0, "skipped_sources": []}
-        for conn_name, sub_cfg in _seed_hosts_for(area_cfg, connectors):
-            module = connectors[conn_name]
-            try:
-                records = module.fetch(area_name, **sub_cfg)
-            except Exception as e:  # noqa: BLE001 - per-area isolation, summarized below
-                area_summary["skipped_sources"].append(f"{conn_name}: {type(e).__name__}: {e}")
+    geocoded = 0
+    skipped_recent = 0
+    skipped_enriched = 0
+    try:
+        store = SearchStore(db_path)
+    except SearchStoreError as e:
+        raise VnGeoError(str(e)) from e
+    with store:
+        conn = store.conn
+        _store.ensure_entity_schema(conn)
+        stored_index = {str(meta.get("entity_id") or ""): meta for _doc_id, meta in _store._iter_entity_docs(conn)}
+        for area_cfg in cfg["areas"]:
+            if not isinstance(area_cfg, dict) or not area_cfg.get("name"):
                 continue
-            area_summary["fetched"] += len(records or [])
-            for rec in records or []:
+            area_name = str(area_cfg["name"])
+            province = str(area_cfg.get("province") or "")
+            area_summary = {
+                "area": area_name,
+                "fetched": 0,
+                "seeded": 0,
+                "skipped_sources": [],
+                "geocoded": 0,
+                "geocode_skipped_recent": 0,
+                "geocode_skipped_enriched": 0,
+            }
+            for conn_name, sub_cfg in _seed_hosts_for(area_cfg, connectors):
+                module = connectors[conn_name]
+                try:
+                    records = module.fetch(area_name, **sub_cfg)
+                except Exception as e:  # noqa: BLE001 - per-area isolation, summarized below
+                    area_summary["skipped_sources"].append(f"{conn_name}: {type(e).__name__}: {e}")
+                    continue
+                area_summary["fetched"] += len(records or [])
+                for rec in records or []:
+                    if max_entities is not None and seeded >= max_entities:
+                        break
+                    try:
+                        entity = normalize(rec, conn_source(conn_name, province))
+                    except VnGeoError:
+                        continue  # malformed record — the connector's raw payload, skipped
+                    eid = str(entity.get("entity_id") or "") or _store.entity_id_for(
+                        str(entity.get("source") or ""),
+                        entity.get("source_id"),
+                        entity.get("name"),
+                        entity.get("address_text"),
+                    )
+                    if geocode_missing and entity.get("lat") is None and entity.get("lng") is None:
+                        if area_name and not entity.get("area_old"):
+                            entity["area_old"] = area_name
+                        if province and not entity.get("province"):
+                            entity["province"] = province
+                        stored_meta = stored_index.get(eid) if eid else None
+                        if stored_meta is not None and _entity_has_coords(stored_meta):
+                            # already enriched in the store — keep its coords, no re-geocode
+                            _carry_stored_coords(entity, stored_meta)
+                            skipped_enriched += 1
+                            area_summary["geocode_skipped_enriched"] += 1
+                        elif _geocode_marker_is_fresh(conn, eid, retry_days):
+                            # attempted within the retry window — skip (no sleep, no marker)
+                            skipped_recent += 1
+                            area_summary["geocode_skipped_recent"] += 1
+                        else:
+                            entity = geocode(entity)
+                            _record_geocode_attempt(conn, eid)  # marker on success AND failure
+                            time.sleep(1.5)  # Nominatim politeness (>=1.5 s, real attempts only)
+                            geocoded += 1
+                            area_summary["geocoded"] += 1
+                    try:
+                        _store.entity_upsert(store, entity)
+                    except SearchStoreError as e:
+                        raise VnGeoError(str(e)) from e
+                    if eid:
+                        stored_index[eid] = entity
+                    seeded += 1
+                    area_summary["seeded"] += 1
                 if max_entities is not None and seeded >= max_entities:
                     break
-                try:
-                    entity = normalize(rec, conn_source(conn_name, province))
-                except VnGeoError:
-                    continue  # malformed record — the connector's raw payload, skipped
-                if geocode_missing and entity.get("lat") is None and entity.get("lng") is None:
-                    if area_name and not entity.get("area_old"):
-                        entity["area_old"] = area_name
-                    if province and not entity.get("province"):
-                        entity["province"] = province
-                    entity = geocode(entity)
-                    time.sleep(1.5)  # Nominatim politeness (>=1.5 s between calls)
-                upsert_entity(db_path, entity)
-                seeded += 1
-                area_summary["seeded"] += 1
+            totals["areas"].append(area_summary)
             if max_entities is not None and seeded >= max_entities:
                 break
-        totals["areas"].append(area_summary)
-        if max_entities is not None and seeded >= max_entities:
-            break
     totals["ok"] = True
     totals["seeded"] = seeded
+    totals["geocoded"] = geocoded
+    totals["geocode_skipped_recent"] = skipped_recent
+    totals["geocode_skipped_enriched"] = skipped_enriched
     return totals
 
 

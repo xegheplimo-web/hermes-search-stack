@@ -89,7 +89,15 @@ def test_seed_inserts_and_is_idempotent(tmp_path, db_path, monkeypatch, no_sleep
     cfg = _write_config(tmp_path)
     out = business.seed_from_config(cfg, db_path)
     assert out["ok"] is True and out["seeded"] == 2
-    assert out["areas"][0] == {"area": "Yên Dũng", "fetched": 2, "seeded": 2, "skipped_sources": []}
+    assert out["areas"][0] == {
+        "area": "Yên Dũng",
+        "fetched": 2,
+        "seeded": 2,
+        "skipped_sources": [],
+        "geocoded": 1,
+        "geocode_skipped_recent": 0,
+        "geocode_skipped_enriched": 0,
+    }
     assert stub_geocode == ["Nhà nghỉ Bảo An"]  # only the coordinate-less record is geocoded
     assert len(business.query_entities(db_path, "", limit=10)) == 2
     events = business.diff_events(db_path)

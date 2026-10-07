@@ -1,0 +1,62 @@
+{
+  "task": "R14-E v2 - Geocode attempt-tracking + retry window (seed re-run speed fix)",
+  "status": "done",
+  "branch": "r14-e",
+  "summary": "seed_from_config() no longer re-geocodes every coordinate-less record on every re-run. A per-entity attempt marker in the store kv table plus a stored-coords check bound geocoding to a retry window, so a re-run adds zero document versions and finishes in ~1s instead of ~50min.",
+  "what_changed": [
+    "vn_geo/business.py: added _geocode_retry_days(), _geocode_marker_key(), _entity_has_coords(), _geocode_marker_is_fresh(), _record_geocode_attempt(), _carry_stored_coords() helpers (stdlib only).",
+    "vn_geo/business.py: seed_from_config() now opens one SearchStore for the whole run, snapshots stored entity_id->meta, and replaces the unconditional geocode branch with a 3-way decision: attempt / geocode_skipped_recent (fresh marker) / geocode_skipped_enriched (stored entity already has coords).",
+    "Attempt marker: kv key 'geocode_attempted:<entity_id>' -> ISO-8601 UTC timestamp, written after EVERY real attempt (success AND failure). Fresh = marker exists and age < retry_days; absent marker => attempt.",
+    "Enriched-skip carries the stored lat/lng/geocode_status/confidence onto the incoming entity so the re-upsert adds ZERO new document versions (those fields are in store ENTITY_DIFF_FIELDS).",
+    "Politeness: time.sleep(1.5) runs after REAL attempts only; the skip paths never sleep.",
+    "business_geocode_missing:false => no attempts and no markers (existing semantics preserved).",
+    "Seed summary: ADDED keys only - per-area and totals 'geocoded', 'geocode_skipped_recent', 'geocode_skipped_enriched'. Existing keys (ok, seeded, areas, fetched, skipped_sources) unchanged.",
+    "tests/test_business_geocode_policy.py: new hermetic test file (7 tests, no network).",
+    "tests/test_business_seed.py: ONE assertion updated (test_seed_inserts_and_is_idempotent line ~92) - it did an exact-equality check on the per-area summary dict, which now carries the three new keys (geocoded=1). This is the only way to keep the suite green while adding the spec-mandated per-area keys; no other test file touched."
+  ],
+  "config_keys": {
+    "business_geocode_retry_days": "NEW, optional number, default 7. Read from the area config next to business_geocode_missing. Window (in days) during which a previously attempted entity is not re-geocoded. Non-numeric falls back to 7.",
+    "business_geocode_missing": "existing, default true. false => no geocode attempts, no markers."
+  },
+  "counters": {
+    "geocoded": "attempts made this run (success or failure)",
+    "geocode_skipped_recent": "coordinate-less records skipped because a fresh attempt marker exists",
+    "geocode_skipped_enriched": "coordinate-less records skipped because the stored entity already has coords",
+    "scope": "reported per-area (areas[i]) and in totals"
+  },
+  "tests": {
+    "new_file": "tests/test_business_geocode_policy.py",
+    "new_tests": [
+      "test_failed_attempts_mark_then_skip_on_rerun - run1: N failures -> markers written, geocoded=N; run2: geocoded=0, skipped_recent=N, ZERO new document versions, no extra sleeps",
+      "test_successful_attempt_is_enriched_skipped_on_rerun - run1 success -> run2 geocoded=0, skipped_enriched=1, zero new versions (stored coords carried)",
+      "test_retry_window_elapsed_retries - retry_days=0 -> run2 attempts again",
+      "test_stale_marker_retries_within_default_window - backdated markers (2020) with default 7d window -> run2 attempts again",
+      "test_retry_days_default_is_seven_when_key_absent - default 7; explicit 3; non-numeric -> 7",
+      "test_geocode_missing_false_makes_no_attempts_or_markers - 0 geocoder calls, no markers, no sleeps",
+      "plus shared hermetic fixtures: monkeypatched _goong_geocode/_nominatim_geocode with call counters + monkeypatched time.sleep"
+    ],
+    "full_suite": "1081 tests collected; `python -m pytest -q` exit 0 (all pass, 1 pre-existing skip)",
+    "ruff": "`ruff check .` clean; `ruff format --check .` clean"
+  },
+  "demo": {
+    "config": "data/r14-e-cfg.json",
+    "db": "data/r14-e-test.db",
+    "note": "scratch db only; data/vn-geo.db never touched",
+    "run1_wall_seconds": 42,
+    "run2_wall_seconds": 1.03,
+    "run1_command": "python -m vn_geo business seed --config data/r14-e-cfg.json --db data/r14-e-test.db --json",
+    "run2_command": "python -m vn_geo business seed --config data/r14-e-cfg.json --db data/r14-e-test.db --json",
+    "run1_output": {"ok": true, "config": "data/r14-e-cfg.json", "db": "data/r14-e-test.db", "areas": [{"area": "Yên Dũng", "fetched": 25, "seeded": 25, "skipped_sources": [], "geocoded": 25, "geocode_skipped_recent": 0, "geocode_skipped_enriched": 0}], "seeded": 25, "geocoded": 25, "geocode_skipped_recent": 0, "geocode_skipped_enriched": 0},
+    "run2_output": {"ok": true, "config": "data/r14-e-cfg.json", "db": "data/r14-e-test.db", "areas": [{"area": "Yên Dũng", "fetched": 25, "seeded": 25, "skipped_sources": [], "geocoded": 0, "geocode_skipped_recent": 25, "geocode_skipped_enriched": 0}], "seeded": 25, "geocoded": 0, "geocode_skipped_recent": 25, "geocode_skipped_enriched": 0},
+    "db_after_both_runs": {"documents_total": 25, "entities": 25, "markers": 25, "entity_events": 25},
+    "acceptance": "run1 geocoded=25 (>=1); run2 geocoded=0, skipped_recent+skipped_enriched=25 (>=1), wall 1.03s (<20s); run2 added 0 document versions and 0 events"
+  },
+  "files_touched": [
+    "vn_geo/business.py",
+    "tests/test_business_geocode_policy.py (new)",
+    "tests/test_business_seed.py (one per-area assertion update, see what_changed)",
+    "data/r14-e-cfg.json (new, demo config)",
+    "data/r14-e-test.db (new, scratch demo db)",
+    "result.json (this file)"
+  ]
+}
