@@ -180,3 +180,98 @@ outside/edge; load/fetch idempotency via fixture; missing cache → graceful. Ma
 | tests/ (each task: NEW files in its area only) | ✓ | ✓ | ✓ | ✓ |
 
 Everything else: read-only. Git: orchestrator only.
+
+---
+
+## §6 Wave-2 — R15-B1 xhigh single-agent pipeline + C2 local wiring (FROZEN)
+
+Added 2026-10-07 after wave-1 merged (`614ad18`). C2 (local-first hook into the answer path) is
+folded into B1 — same file (`engine.py`), one coherent rework; `local_context.py` stays frozen.
+
+### §6.1 Scope (write ONLY these)
+
+- `gateway/core/planner.py` — NEW. Semantic query planner.
+- `gateway/core/claims.py` — NEW. Claim extraction + verification + confidence.
+- `gateway/core/engine.py` — deep-path upgrade + local evidence wiring (both modes).
+- `gateway/config.py` — new knobs only (additive).
+- `gateway/core/synthesis.py` — ONE additive kwarg allowed (§6.4); default behavior byte-identical.
+- Tests: NEW `tests/gateway/test_planner.py`, `test_claims.py`, `test_xhigh_pipeline.py`,
+  `test_local_wiring.py` (+ additive extensions allowed in existing test files).
+- NOT allowed: `local_context.py`, `hermes_bridge.py`, backends, `app.py`, MCP, `evals/*`,
+  `vn_geo/*`, `searchstore/*`, `scripts/*`.
+
+### §6.2 Planner (`planner.py`, frozen API)
+
+- `@dataclass Plan: needed: bool; sub_questions: list[str]; multi_hop: bool; source: str` —
+  `source ∈ {"model","heuristic","none"}`.
+- `plan_query(query, *, llm=None, max_subquestions=3) -> Plan` — NEVER raises, NEVER blocks
+  unbounded:
+  - `llm` is a duck-typed seam: `llm.complete(prompt: str, *, max_tokens: int) -> str` (engine
+    builds it lazily from the synth config; tests inject fakes).
+  - Model path: ONE call, strict JSON `{"sub_questions": [str,...], "multi_hop": bool}`; validate
+    (≤ max, each 3–200 chars, dedupe, query itself excluded); any deviation → heuristic fallback.
+  - Heuristic fallback: existing `router.split_query(query, max_parts=max_subquestions)`;
+    `needed = bool(parts)`; empty → `needed=False, source="none"`.
+  - Model unavailable/fails → heuristic, `source="heuristic"` + engine warning (never silent).
+
+### §6.3 Claims (`claims.py`, frozen API)
+
+- `extract_claims(answer_md) -> list[Claim]` — sentence split; `Claim: text, citation_ids: list[int]`
+  (ids parsed from `[n]` markers; sentences trimmed, empties dropped).
+- `verify_claims(claims, evidence, *, judge="off", overlap=0.15, llm=None) -> ClaimReport` —
+  `ClaimReport: claims: list[ClaimVerdict], unsupported: list[str], possible_contradictions: list[str],
+  coverage: float`.
+  - Mechanical rules (frozen): a cited claim is SUPPORTED iff every cited id exists in `evidence`
+    AND ≥ `overlap` fraction of the claim's content tokens (len ≥ 4, lowercased) appear in the
+    union of cited contents. A sentence with digits/dates but NO citation → `uncited_factual`.
+    `coverage` = supported / (supported + unsupported + uncited_factual); 1.0 when no claims.
+  - `judge="local"` (optional, capped ONE llm call, strict JSON, fail-open → all "unknown");
+    `judge="off"` default — pure mechanical.
+  - `possible_contradictions` (cheap v1): claim citing ≥2 evidences whose digit-token sets differ.
+- `confidence_from(report) -> "high"|"medium"|"low"` — high: 0 unsupported/uncited & coverage ≥ 0.9;
+  medium: ≤2 issues or coverage ≥ 0.6; else low.
+
+### §6.4 Engine integration (deep path; fast path UNCHANGED)
+
+- Fast/cache paths: byte-identical behavior to today (no planner/claims calls, no new warnings).
+- Deep path order: cache → probe → depth → **plan** (deadline-guarded; `needed=False` → behaves as
+  today) → bounded sub-searches (plan parts ∪ marker splits, deduped, ≤ `deep_search_queries`) →
+  extract → trust → **local evidence merge (C2)** → draft 1 → **claim verify** → **conditional
+  revise** (only if issues AND `xhigh_revise_max` budget AND deadline OK) → re-verify once →
+  publish (existing `_verify_and_publish`).
+- **C2 local wiring (BOTH modes):** after `_trust_order`, `local_items = build_local_evidence(query)`
+  → drop `ambiguous=True` → convert to `EvidenceItem` (url `local://vn-geo/<id>`, content as-is) →
+  PREPEND (local first), then renumber ALL evidence ids sequentially `1..N` (local 1..k, web k+1..).
+  Empty local → no-op (no warning). Timings: `local_ms` + `local_hits`. `trust_by_url` unaffected.
+- Revise (frozen, bounded): issues ≥ 1 AND budget > 0 AND deadline OK → (a) targeted re-search for
+  top ≤ 2 unsupported/uncited claims (1 search each, cap 2; extract top ≤ 2 urls) → append evidence →
+  renumber; (b) ONE re-draft via `synth.stream(query, evidence, deep=True, revise=[...claims])` —
+  synthesis gains ONE additive kwarg `revise: list[str] | None = None` that prepends a
+  "REVISION REQUIRED — fix/remove these claims" block; default None → prompt byte-identical to
+  today. (c) re-verify; accept draft 2 iff issue count strictly decreased, else keep draft 1 +
+  warning `"revision did not improve (N→M) — keeping draft 1"`.
+- **Adaptive, not always-N**: exactly ≤1 plan call, ≤1 verify (re-verify once after revise), ≤1
+  revise pass, ≤2 extra searches. Everything deadline-guarded (`deadline_passed()` between stages).
+- Additive `EngineResult` fields (defaults keep old shape valid): `confidence: str | None = None`
+  (deep only; None for fast/cache) + `gaps: list[str] = field(default_factory=list)` (≤3 issue
+  texts, 80-char cap). Serializers unchanged (chat_completions picks fields explicitly).
+- Timings additive keys: `plan_ms`, `local_ms`, `local_hits`, `verify_claims_ms`, `revise_ms`.
+- Warnings additive (existing style): planner fallback note, revise outcome note.
+
+### §6.5 Config knobs (env `HERMES_GATEWAY_XHIGH_*`, all additive)
+
+`xhigh_enabled: bool = True` (deep only; False → deep behaves EXACTLY as today) ·
+`xhigh_max_subquestions: int = 3` · `xhigh_revise_max: int = 1` · `xhigh_judge: str = "off"` ·
+`xhigh_claim_overlap: float = 0.15`.
+
+### §6.6 Tests + acceptance (hermetic; no network)
+
+New tests cover: planner model-path + fallback + validation; claims math (overlap thresholds,
+uncited_factual, coverage, contradictions, judge fail-open); confidence mapping; engine deep path
+with fake planner/llm (plan used, revise fired once, improved vs not-improved branches, deadline
+skips); local wiring both modes (prepend + renumber + ambiguous dropped + db-missing no-op);
+`xhigh_enabled=False` → deep == legacy (fake synth called once, no planner/claims). Plain pytest
+exit 0 + ruff clean + fast-path regression suite untouched.
+**Acceptance (orchestrator):** gates + independent script (stub backend + fake synth): deep with
+xhigh on → ≥1 extra stage timings present; off → none; fast → none; local hits appear when scratch
+db has matching entity.

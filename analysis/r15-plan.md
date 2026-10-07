@@ -81,7 +81,9 @@ keep a dual reference: frozen `gpt-5.6-sol@xhigh` for longitudinal comparison + 
 | **R15-B1** | Devin | xhigh single-agent pipeline: semantic planner → bounded retrieval → evidence table → draft 1 → claim verification → conditional revise (budgeted) | after D+A+C |
 | **R15-B2** | TBD | ultra mode + backend worker pool + separability routing (N≤4) | after B1 + D verified |
 
-Wave 1 = D ∥ A ∥ C ∥ E (disjoint scopes). Wave 2 = B1 (+C2 hook). Wave 3 = B2.
+Wave 1 = D ∥ A ∥ C ∥ E (disjoint scopes) — **DONE 2026-10-07, merged `614ad18` (CI+Security green;
+ledger `agent_logs/r15_verification_wave1.md`)**. Wave 2 = B1 — **C2 folded into B1** (same file,
+single-writer engine; frozen in `analysis/r15-interfaces.md` §6). Wave 3 = B2.
 **Acceptance:** harness baseline recorded → after B1: gap-closure report + 45-case control 0 regressions
 + VN-local subset ≥ baseline. Holdout stays release-check-only.
 

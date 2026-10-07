@@ -1,0 +1,59 @@
+# R15-B1 — xhigh single-agent pipeline + C2 local wiring (Devin)
+
+You work in your own git worktree (`r15-b1`). Read `analysis/r15-interfaces.md` §6 FIRST — it is the
+frozen contract; implement exactly. Also read §0 (conventions) and the current `gateway/core/engine.py`
+(post-R15-D: cooperative deadline + admission timings already in place).
+
+## Mission
+
+Upgrade the DEEP path of the gateway engine from single-pass to a bounded "xhigh" pipeline:
+semantic planner → bounded retrieval → local evidence (C2) → draft 1 → claim verification →
+conditional revise. The FAST path and the cache path must stay byte-identical to today.
+"Adaptive, not always-N": at most 1 plan call, 1 verify, 1 revise pass, 2 extra searches —
+everything deadline-guarded.
+
+## Deliverables (frozen §6.1 scope)
+
+1. `gateway/core/planner.py` — NEW. `Plan` dataclass + `plan_query()` per §6.2 (model path via
+   injected duck-typed `llm.complete(prompt, *, max_tokens) -> str`; strict-JSON validation; fallback
+   to `router.split_query`; NEVER raises).
+2. `gateway/core/claims.py` — NEW. `extract_claims` / `verify_claims` / `confidence_from` per §6.3
+   (mechanical overlap rules; `judge="off"` default; optional capped-one-call local judge, fail-open;
+   cheap contradiction check).
+3. `gateway/core/engine.py` — deep path per §6.4:
+   - planner stage (deadline-guarded; `needed=False` → today's behavior),
+   - sub-searches = plan parts ∪ marker splits (deduped, ≤ `deep_search_queries`),
+   - C2 local wiring in BOTH modes (after trust order; prepend non-ambiguous local items; renumber
+     all ids sequentially; empty → no-op; timings `local_ms` + `local_hits`),
+   - claim verify + conditional revise (bounded; accept draft 2 only if issue count strictly
+     decreases; else keep draft 1 + warning),
+   - additive `EngineResult` fields `confidence` + `gaps`; additive timings keys `plan_ms`,
+     `verify_claims_ms`, `revise_ms` (+ existing ones untouched).
+4. `gateway/config.py` — 5 knobs per §6.5 (`HERMES_GATEWAY_XHIGH_*`, defaults as frozen).
+5. `gateway/core/synthesis.py` — ONE additive kwarg `revise: list[str] | None = None` on `stream()`
+   per §6.4; `None` → prompt byte-identical to today (verify with an existing test).
+6. Tests — NEW files `tests/gateway/test_planner.py`, `test_claims.py`, `test_xhigh_pipeline.py`,
+   `test_local_wiring.py` per §6.6. Hermetic: fake llm / fake synth / stub backend / tmp_path dbs.
+   NO network anywhere.
+7. `result.json` at worktree root: `{"task":"r15-b1","status":"ok","files_changed":[...],
+   "tests_run":N,"summary":"...","deviations":[...]}`.
+
+## Hard constraints
+
+- Do NOT edit: `local_context.py`, `hermes_bridge.py`, `app.py`, backends, MCP, `evals/*`, `vn_geo/*`,
+  `searchstore/*`, `scripts/*`, other tests outside the 4 new files (+ additive allowed in existing
+  gateway tests if strictly needed — prefer new files).
+- stdlib only; no new deps; hermetic tests; never touch `data/vn-geo.db` (use tmp_path dbs).
+- Keep every existing test passing (fast-path regression suite must stay untouched). `xhigh_enabled=
+  False` → deep behaves EXACTLY as today.
+- Never commit/push/branch/stash. Budget ~75 min. If blocked >15 min on one error: stop, write
+  `result.json` with status "blocked" + what you tried.
+
+## Self-check before finishing
+
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q` (cwd = worktree root)
+   → exit code 0 (exit code is truth).
+2. `ruff check .` + `ruff format --check .` → clean.
+3. Quick behavior proof (paste into result.json): run a tiny inline script with StubBackend +
+   FakeSynthesizer showing deep-mode timings contain `plan_ms`/`verify_claims_ms` when xhigh is on,
+   and NOT when `xhigh_enabled=False`; fast-mode timings identical in both configs.
