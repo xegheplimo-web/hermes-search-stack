@@ -1,0 +1,12 @@
+# R15 Wave-2 verification ledger — B1 xhigh pipeline (+ C2 local wiring)
+
+## r15-b1 — Devin (worktree `E:/aoe-native-agent-worktrees/r15-b1`, base `9ddb321`)
+
+- **Deliverable**: `gateway/core/planner.py` (117 L) + `gateway/core/claims.py` (193 L) + `gateway/core/engine.py` deep-path upgrade (+263 L) + `gateway/config.py` 5 additive knobs (`xhigh_enabled=True`, `xhigh_max_subquestions=3`, `xhigh_revise_max=1`, `xhigh_judge="off"`, `xhigh_claim_overlap=0.15`) + `gateway/core/synthesis.py` `revise` kwarg (additive, default None → prompt byte-identical) + 4 new test files (786 L).
+- **Agent gates**: pytest exit 0 (1221 collected, 61 new) · `ruff check` + `ruff format --check` clean.
+- **Frozen scope**: OK — no `local_context.py`/`hermes_bridge.py`/`app.py`/backends/`evals/*`/`vn_geo/*`/`searchstore/*`/`scripts/*` touched.
+- **Code review (orchestrator)**: plan stage = ONE bounded strict-JSON call, heuristic fallback warns (never silent); sub-query union = plan parts ∪ marker splits, deduped, capped; verify+revise bounded (≤2 issue claims re-searched, ≤2 new urls, ONE re-draft, draft 2 kept only on strict issue-count decrease, else warning + draft 1); `done` event carries additive `confidence`/`gaps`; local merge both modes (non-ambiguous prepend + renumber 1..N, ambiguous dropped); deadline skips every xhigh/local stage. All per `analysis/r15-interfaces.md` §6.
+- **Independent acceptance** (`_accept_r15b1.py`, stub backend + scripted fakes, 11 scenarios): **25/25 PASS** — deep on → plan/verify/local stage timings + confidence high; revise accept on improvement / reject with warning on non-improvement; `xhigh_enabled=False` → legacy deep (llm never called); fast → no xhigh keys; local fast+deep prepend/renumber; ambiguous both dropped; planner model path sub-searches + ONE call; planner failure → warning; `run_iter` done payload; deadline skip.
+- **Merge**: `287448f` (`--no-ff r15-b1`).
+- **Main-gate catch (real integration issue)**: 3 existing tests in `tests/gateway/test_fast_trust_order.py` failed on main after merge — on a dev checkout the real `data/vn-geo.db` exists, so C2 local merge prepended local evidence and broke ordering assertions (worktree had no db → agent never saw it). Fix `15fa1aa`: autouse hermetic `VN_GEO_DB_ENV` default (absent tmp path) in `tests/gateway/conftest.py`; local-wiring tests still override with their own scratch db. Gate re-run exit 0.
+- **CI + Security**: green (`15fa1aa`).
