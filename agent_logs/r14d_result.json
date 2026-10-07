@@ -1,0 +1,46 @@
+{
+  "task": "r14-d — PlaceProvider interface + refresh `places` step + run manifest",
+  "files_created": [
+    "vn_geo/providers.py",
+    "tests/test_providers.py",
+    "tests/test_refresh_places.py",
+    "tests/fixtures/r14d/gosom_places.jsonl",
+    "tests/fixtures/r14d/gosom_places_updated.jsonl",
+    "tests/fixtures/r14d/config_places.json",
+    "tests/fixtures/r14d/scan_stale.jsonl",
+    "agent_logs/r14d_result.json"
+  ],
+  "files_modified": [
+    "vn_geo/refresh.py (ADDITIVE only: SOURCES + 'places'; _default_sources; _validate_places_cfg + call; _area_code/_age_days/_places_max_age_days helpers; coverage() + 'places_gap'/'places_stale'; _plan_steps + places step; _run_step + places branch; refresh() reorder + additive event key 'places'; CLI --sources default None + help; coverage human output)"
+  ],
+  "tests_summary": {
+    "new_tests": 42,
+    "new_files": ["tests/test_providers.py (16)", "tests/test_refresh_places.py (26)"],
+    "targeted_run": "tests/test_providers.py tests/test_refresh_places.py tests/test_vn_geo_refresh.py tests/test_vn_geo_places.py tests/test_connectors_gosom.py -> 178 passed",
+    "full_suite": "pytest -q (excl. tests/test_vn_geo_goong.py) -> 100% pass, 0 failures",
+    "ruff": "ruff check . clean; ruff format --check . clean (180 files)"
+  },
+  "acceptance_selfcheck": {
+    "1_pytest_and_ruff": "PASS (new tests green; existing suite green except the pre-existing, environmental tests/test_vn_geo_goong.py failures — see notes; ruff check/format clean)",
+    "2_stub_provider_e2e_scratch_db": "PASS — ran the offline gosom-jsonl provider into data/r14-d-test.db: run1 places={new:3,updated:0,unchanged:0}, run2 places={new:0,updated:0,unchanged:3}; event read back: run1 'places'={provider:'gosom-jsonl',records_raw:3,records_new:3,records_updated:0,records_unchanged:0,errors:[]}, run2 records_unchanged:3; 3 place docs queried back via places.query_places. (Scratch db deleted after; orchestrator re-runs fresh.)",
+    "3_coverage_keys": "PASS — coverage() returns 'places_gap' (area codes with zero place docs) and 'places_stale' ([{area,last_scan,age_days}], threshold places_max_age_days default 90). Tests: gap+stale with fixture, threshold override, keys-present-without-config, 'code' field override.",
+    "4_zero_network_and_existing_tests": "PASS — tests tripwire socket.create_connection/urllib.request.urlopen; tests/test_vn_geo_refresh.py untouched and green"
+  },
+  "interface_conformance": {
+    "providers": "PlaceProvider Protocol (name + fetch(area_cfg)); GosomJsonlProvider name='gosom-jsonl' reads area_cfg['places']['path'] JSONL -> connectors_gosom.parse_record -> places-shaped dicts; get_provider(name, cfg=None); PROVIDERS=('gosom-jsonl',)",
+    "refresh_SOURCES": "('admin','overpass','ckan','places')",
+    "run_event_places_key": "'places': {provider, records_raw, records_new, records_updated, records_unchanged, errors:[]} added to the refresh_run payload; existing keys (areas, sources, totals) untouched",
+    "places_gap": "list[str] of area codes (area['code'] or slug(fold_d(name))) with zero place docs",
+    "places_stale": "[{area, last_scan, age_days}] for areas whose latest place scan is older than places_max_age_days",
+    "threshold": "config key 'places_max_age_days', default 90"
+  },
+  "notes": [
+    "PRE-EXISTING ENVIRONMENTAL FAILURE (not caused by this task): tests/test_vn_geo_goong.py fails with 'Goong daily limit 1000 reached for 2026-10-07'. Root cause: the goong tests are not hermetic — GoongClient is built without an explicit state_path, so DailyLimiter uses the shared default C:\\Users\\atton\\AppData\\Local\\hermes\\vn-geo\\goong_usage.json, which is at {\"date\":\"2026-10-07\",\"count\":1000}. Evidence: the file exists with count=1000; the goong tests fail in isolation (pytest tests/test_vn_geo_goong.py); git status shows this task changed only vn_geo/refresh.py + new scoped files (goong.py and its test untouched). Remediation for the orchestrator: delete/zero that state file, or make the goong tests pass an explicit tmp state_path. I did NOT modify goong.py, its tests, or any file outside my scope.",
+    "DESIGN DECISION — places default: SOURCES gains 'places' (so --sources places is valid), but a bare run stays admin+overpass+ckan for legacy configs, adding 'places' only when an area configures a places block (_default_sources). This keeps the frozen run-event 'sources' value (and thus the existing test asserting event['sources']==['admin','overpass','ckan']) unchanged for old configs, while a places-configured area runs by default. CLI --sources default changed to None so it inherits the same dynamic default.",
+    "ADDITIVITY: the main totals loop is UNCHANGED, so places counts flow into per-area buckets + totals like any source; the new places-specific summary (records_raw etc.) is added ONLY under the additive top-level 'places' key.",
+    "records_raw = new+updated+unchanged (places.save_places classifies every record into exactly one bucket), so no extra provider plumbing is needed.",
+    "OFFLINE: the places step does not call before_fetch()/sleep — the provider reads a local JSONL (no network, no politeness pacing).",
+    "GosomJsonlProvider maps connectors_gosom's source 'gmaps' -> the frozen place source 'google-maps' so coverage's _places_stats counts these docs (places.PLACE_SOURCES).",
+    "No analysis/refresh-areas.json edits; no data/vn-geo.db writes (scratch used data/r14-d-test.db + tmp_path, both gitignored); stdlib only; no commits."
+  ]
+}

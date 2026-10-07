@@ -3,15 +3,18 @@
 Contract: ``analysis/r5-interfaces.md`` §3.
 
 - ``load_config(path)`` reads and validates the areas config JSON
-  (``{"areas": [{name, province?, overpass?{bbox,categories}, ckan?{datasets}}]}``).
+  (``{"areas": [{name, province?, overpass?{bbox,categories}, ckan?{datasets},
+  places?{provider,path}}]}``).
 - ``coverage(store, ...)`` reports which sources hold documents for each
-  configured area — pure SearchStore reads, no network — plus the gap list.
+  configured area — pure SearchStore reads, no network — plus the gap list and
+  the places gap/staleness lists (R14-D).
 - ``refresh(store, ...)`` fetches whatever is configured (admin units once
-  globally, Overpass per area bbox, CKAN per area datasets), classifies every
-  outgoing document as new/updated/unchanged via the (url_key, sha256) dedup
-  pattern from ``places.save_places``, then ingests through each round-4
-  module's own ``ingest()`` — so re-running an unchanged refresh adds nothing.
-  A failing source is recorded as ``{"error": ...}`` and the run continues.
+  globally, Overpass per area bbox, CKAN per area datasets, offline places via a
+  ``PlaceProvider``), classifies every outgoing document as new/updated/unchanged
+  via the (url_key, sha256) dedup pattern from ``places.save_places``, then
+  ingests through each round-4 module's own ``ingest()`` — so re-running an
+  unchanged refresh adds nothing. A failing source is recorded as
+  ``{"error": ...}`` and the run continues.
 
 CLI: ``python -m vn_geo.refresh <coverage|run> ...`` — exit 0 ok ·
 1 runtime error (or any per-source error inside ``run``) · 2 usage/IO.
@@ -22,16 +25,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 from searchstore import SearchStore, SearchStoreError, content_sha256, url_key
+from searchstore.store import fold_d
 
-from . import VnGeoError, admin_units, enterprises, overpass_poi, places
+from . import VnGeoError, admin_units, enterprises, overpass_poi, places, providers
 
-SOURCES = ("admin", "overpass", "ckan")
+# ``places`` (R14-D) is opt-in: a bare ``refresh`` runs admin+overpass+ckan as
+# before, and adds the places step only when an area configures a ``places``
+# block (see ``_default_sources``). ``--sources places`` is always accepted.
+SOURCES = ("admin", "overpass", "ckan", "places")
 ADMIN_VERSION = 2
 EVENT_KIND = "refresh_run"
 GLOBAL_AREA = "(global)"
@@ -39,6 +48,33 @@ GLOBAL_AREA = "(global)"
 
 def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _area_code(name: str) -> str:
+    """Stable area slug: ``fold_d`` + strip diacritics (``'Yên Dũng'`` -> ``'yen-dung'``)."""
+    folded = fold_d(str(name)).casefold()
+    ascii_ = "".join(c for c in unicodedata.normalize("NFD", folded) if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "-", ascii_).strip("-") or "area"
+
+
+def _age_days(iso: str) -> int:
+    """Whole days between *iso* and now (unparseable -> 0)."""
+    try:
+        then = datetime.fromisoformat(str(iso))
+    except (TypeError, ValueError):
+        return 0
+    if then.tzinfo is None:
+        then = then.astimezone()
+    return (datetime.now().astimezone() - then).days
+
+
+def _places_max_age_days(config: dict | None) -> float:
+    """``places_max_age_days`` threshold (config key, default 90)."""
+    if isinstance(config, dict):
+        value = config.get("places_max_age_days")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return 90.0
 
 
 # --------------------------------------------------------------------------- config
@@ -71,6 +107,7 @@ def _validate_config(data) -> dict:
             raise VnGeoError(f"config {label}: 'province' must be a string, got {province!r}")
         _validate_overpass_cfg(area.get("overpass"), label)
         _validate_ckan_cfg(area.get("ckan"), label)
+        _validate_places_cfg(area.get("places"), label)
     return data
 
 
@@ -107,6 +144,22 @@ def _validate_ckan_cfg(cfg, label: str) -> None:
     unknown = [d for d in datasets if d not in enterprises.DATASETS]
     if unknown:
         raise VnGeoError(f"config {label}: unknown ckan datasets {unknown}; known: {sorted(enterprises.DATASETS)}")
+
+
+def _validate_places_cfg(cfg, label: str) -> None:
+    """Validate an area's optional ``places`` block (additive, R14-D)."""
+    if cfg is None:
+        return
+    if not isinstance(cfg, dict):
+        raise VnGeoError(f"config {label}: 'places' must be an object with 'provider' and 'path'")
+    provider = cfg.get("provider")
+    if not isinstance(provider, str) or not provider.strip():
+        raise VnGeoError(f"config {label}: places 'provider' must be a non-empty string")
+    if provider not in providers.PROVIDERS:
+        raise VnGeoError(f"config {label}: unknown places provider {provider!r}; known: {sorted(providers.PROVIDERS)}")
+    path = cfg.get("path")
+    if not isinstance(path, str) or not path.strip():
+        raise VnGeoError(f"config {label}: places 'path' must be a non-empty string")
 
 
 # --------------------------------------------------------------------------- coverage
@@ -193,6 +246,12 @@ def coverage(store: SearchStore, *, config: dict | None = None, area: str | None
     use ``meta LIKE %<province-or-name>%``, ckan sums the configured datasets'
     ``ckan-<province>`` providers, overpass bbox-filters osm metas (or counts
     all osm docs with a ``"scope": "global"`` note when no bbox is set).
+
+    Additive (R14-D): ``places_gap`` lists area codes with zero place docs and
+    ``places_stale`` lists ``{"area", "last_scan", "age_days"}`` for areas whose
+    latest place scan is older than ``places_max_age_days`` (config key, default
+    90). Both use the same stable area code (``code`` field if present, else a
+    ``fold_d`` slug of the name).
     """
     if area is not None:
         areas = [{"name": area}]
@@ -200,7 +259,10 @@ def coverage(store: SearchStore, *, config: dict | None = None, area: str | None
         areas = config.get("areas") or []
     else:
         areas = []
+    threshold = _places_max_age_days(config)
     report = []
+    places_gap: list[str] = []
+    places_stale: list[dict] = []
     for a in areas:
         name = a["name"]
         sources = {
@@ -216,7 +278,15 @@ def coverage(store: SearchStore, *, config: dict | None = None, area: str | None
                 "gaps": [src for src, s in sources.items() if not s["present"]],
             }
         )
-    return {"checked_at": _now_iso(), "areas": report}
+        code = a.get("code") or _area_code(name)
+        places = sources["places"]
+        if places["count"] == 0:
+            places_gap.append(code)
+        elif places["latest_fetched_at"]:
+            age = _age_days(places["latest_fetched_at"])
+            if age > threshold:
+                places_stale.append({"area": code, "last_scan": places["latest_fetched_at"], "age_days": age})
+    return {"checked_at": _now_iso(), "areas": report, "places_gap": places_gap, "places_stale": places_stale}
 
 
 # --------------------------------------------------------------------------- refresh
@@ -239,8 +309,19 @@ def _dedup_counts(store: SearchStore, docs: list[dict]) -> dict:
     return counts
 
 
+def _default_sources(areas: list[dict]) -> list[str]:
+    """Sources a bare ``refresh`` runs: admin+overpass+ckan, plus ``places`` when
+    any area configures a ``places`` block (R14-D). Keeps the legacy default set
+    — and therefore the run-event ``sources`` value — unchanged for old configs.
+    """
+    wanted = [s for s in SOURCES if s != "places"]
+    if any(isinstance(a, dict) and a.get("places") for a in areas):
+        wanted.append("places")
+    return wanted
+
+
 def _plan_steps(areas: list[dict], wanted: list[str]) -> list[dict]:
-    """Execution order: one global admin step, then per-area overpass + ckan."""
+    """Execution order: one global admin step, then per-area overpass + ckan + places."""
     steps: list[dict] = []
     if "admin" in wanted:
         steps.append({"source": "admin", "area": areas[0]["name"] if areas else GLOBAL_AREA, "version": ADMIN_VERSION})
@@ -263,6 +344,11 @@ def _plan_steps(areas: list[dict], wanted: list[str]) -> list[dict]:
             if not ck.get("datasets"):
                 raise VnGeoError(f"area {name!r}: 'ckan' config needs a non-empty 'datasets' list")
             steps.append({"source": "ckan", "area": name, "datasets": list(ck["datasets"])})
+        pl = area.get("places")
+        if "places" in wanted and pl is not None:
+            if not pl.get("provider") or not pl.get("path"):
+                raise VnGeoError(f"area {name!r}: 'places' config needs 'provider' and 'path'")
+            steps.append({"source": "places", "area": name, "provider": pl["provider"], "path": pl["path"]})
     return steps
 
 
@@ -284,6 +370,13 @@ def _run_step(store: SearchStore, step: dict, before_fetch) -> dict:
         counts = _dedup_counts(store, overpass_poi.records_to_documents(records))
         overpass_poi.ingest(store, records)
         return counts
+    if source == "places":
+        # Offline (R14-D): the provider reads a local JSONL file, so there is no
+        # network call and no politeness sleep. save_places classifies every
+        # record as new / updated / unchanged against the (url_key, sha256) dedup.
+        provider = providers.get_provider(step.get("provider"))
+        area_cfg = {"name": step["area"], "places": {"provider": step.get("provider"), "path": step.get("path")}}
+        return places.save_places(store, provider.fetch(area_cfg))
     # ckan: one step covers all of the area's configured datasets
     counts = {"new": 0, "updated": 0, "unchanged": 0}
     for key in step["datasets"]:
@@ -302,6 +395,43 @@ def _run_step(store: SearchStore, step: dict, before_fetch) -> dict:
     return counts
 
 
+def _places_summary(steps: list[dict], buckets: dict[str, dict]) -> dict:
+    """Aggregate places-step results for the run-event ``"places"`` key (R14-D).
+
+    ``records_raw`` = total records returned by the provider(s) = new+updated+
+    unchanged (``places.save_places`` classifies every record into exactly one
+    bucket). ``provider`` is the single provider name, a sorted list when several
+    providers ran, or ``None`` when no places step was planned.
+    """
+    providers_seen: set[str] = set()
+    summary: dict = {
+        "provider": None,
+        "records_raw": 0,
+        "records_new": 0,
+        "records_updated": 0,
+        "records_unchanged": 0,
+        "errors": [],
+    }
+    for step in steps:
+        if step.get("source") != "places":
+            continue
+        if step.get("provider"):
+            providers_seen.add(step["provider"])
+        counts = buckets.get(step["area"], {}).get("sources", {}).get("places")
+        if counts is None:
+            continue
+        if "error" in counts:
+            summary["errors"].append({"area": step["area"], "error": counts["error"]})
+            continue
+        summary["records_new"] += counts["new"]
+        summary["records_updated"] += counts["updated"]
+        summary["records_unchanged"] += counts["unchanged"]
+        summary["records_raw"] += counts["new"] + counts["updated"] + counts["unchanged"]
+    names = sorted(providers_seen)
+    summary["provider"] = names[0] if len(names) == 1 else (names or None)
+    return summary
+
+
 def refresh(
     store: SearchStore,
     *,
@@ -313,21 +443,22 @@ def refresh(
 ) -> dict:
     """Fetch configured VN data into *store* with per-source dedup counts.
 
-    ``sources`` defaults to admin+overpass+ckan (unknown -> VnGeoError).
+    ``sources`` defaults to admin+overpass+ckan, plus ``places`` when an area
+    configures a ``places`` block (R14-D; unknown -> VnGeoError).
     ``dry_run`` returns ``{"dry_run": True, "plan": [...]}`` with no network
     and no sleeping. Real runs sleep ``min_interval`` (via ``sleeper or
     time.sleep``) before every fetch except the first. A failing source is
     recorded as ``{"error": msg}`` and the run continues; totals carry the
     error count, and a ``refresh_run`` event is always recorded afterwards.
     """
-    wanted = list(SOURCES if sources is None else sources)
-    unknown = [s for s in wanted if s not in SOURCES]
-    if unknown:
-        raise VnGeoError(f"unknown refresh sources {unknown}; known: {list(SOURCES)}")
     areas = config.get("areas") or []
     for i, a in enumerate(areas):
         if not isinstance(a, dict) or not str(a.get("name") or "").strip():
             raise VnGeoError(f"config areas[{i}] needs a non-empty 'name' (validate via load_config)")
+    wanted = _default_sources(areas) if sources is None else list(sources)
+    unknown = [s for s in wanted if s not in SOURCES]
+    if unknown:
+        raise VnGeoError(f"unknown refresh sources {unknown}; known: {list(SOURCES)}")
     steps = _plan_steps(areas, wanted)
     if dry_run:
         return {"dry_run": True, "plan": steps}
@@ -356,7 +487,12 @@ def refresh(
             totals[k] += counts[k]
     store.record_event(
         EVENT_KIND,
-        {"areas": [b["name"] for b in buckets.values()], "sources": wanted, "totals": totals},
+        {
+            "areas": [b["name"] for b in buckets.values()],
+            "sources": wanted,
+            "totals": totals,
+            "places": _places_summary(steps, buckets),
+        },
     )
     return {"dry_run": False, "areas": list(buckets.values()), "totals": totals}
 
@@ -392,6 +528,10 @@ def _cmd_coverage(args: argparse.Namespace) -> tuple[dict, list[str]]:
                 note += f" [scope {s['scope']}]"
             human.append(f"  {src}: {note}")
         human.append(f"  gaps: {', '.join(a['gaps']) if a['gaps'] else 'none'}")
+    if report["places_gap"]:
+        human.append(f"places gap: {', '.join(report['places_gap'])}")
+    for stale in report["places_stale"]:
+        human.append(f"places stale: {stale['area']} (last {stale['last_scan']}, {stale['age_days']}d)")
     if not report["areas"]:
         human.append("no areas (pass --config or --area)")
     return {"ok": True, **report}, human
@@ -399,7 +539,7 @@ def _cmd_coverage(args: argparse.Namespace) -> tuple[dict, list[str]]:
 
 def _cmd_run(args: argparse.Namespace) -> tuple[dict, list[str]]:
     config = load_config(args.config)
-    wanted = [s.strip() for s in args.sources.split(",") if s.strip()]
+    wanted = [s.strip() for s in args.sources.split(",") if s.strip()] if args.sources else None
     with _open_store(args.db) as store:
         result = refresh(store, config=config, sources=wanted, dry_run=args.dry_run, min_interval=args.min_interval)
     if result.get("dry_run"):
@@ -437,9 +577,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", required=True, metavar="FILE", help="areas config JSON")
     p.add_argument(
         "--sources",
-        default=",".join(SOURCES),
+        default=None,
         metavar="LIST",
-        help="comma-separated subset of admin,overpass,ckan",
+        help="comma-separated subset of admin,overpass,ckan,places (default: the configured sources)",
     )
     p.add_argument("--dry-run", action="store_true", help="print the fetch plan; no network")
     p.add_argument("--min-interval", type=float, default=1.5, metavar="SEC", help="min seconds between fetches")
