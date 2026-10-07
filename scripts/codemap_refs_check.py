@@ -3,6 +3,7 @@
 (comments/annotations, no code punctuation) are marked DESC and not counted as errors.
 Binary files (db) marked BINARY.
 """
+
 import os
 import re
 import sys
@@ -35,12 +36,15 @@ CAND = {
 LEX_CHIP = re.compile(r"^([A-Za-z0-9_\-]+\.(?:py|ts|tsx|md|db|json)):(\d+)$")
 LEX_INLINE = re.compile(r"([A-Za-z0-9_\-/]+\.(?:py|ts|tsx|md)):(\d+)")
 
+
 def norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.replace("\u00a0", " ").strip())
 
+
 def load_lines(path: str):
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         return f.read().replace("\r\n", "\n").split("\n")
+
 
 def is_code_like(s: str) -> bool:
     """True if snippet looks like actual source text (not an annotation)."""
@@ -51,12 +55,14 @@ def is_code_like(s: str) -> bool:
     # pure annotation words like 'Wait time tracking', 'returns Plan{...}' w/o code punc
     return bool(re.search(r"[(){};=\[\]]|->|``|\bdef\b|\bimport\b|\bfrom\b|\bclass\b|\breturn\b", s))
 
+
 def resolve(basename):
     out = []
     for c in CAND.get(basename, []):
         if os.path.isfile(os.path.join(REPO, c)):
             out.append(c)
     return out
+
 
 def main():
     cm = load_lines(CM)
@@ -76,35 +82,42 @@ def main():
                     j += 1
                     continue
                 break
-            refs.append((f"L{i+1}", m.group(1), int(m.group(2)), snip))
+            refs.append((f"L{i + 1}", m.group(1), int(m.group(2)), snip))
         for m2 in LEX_INLINE.finditer(ln):
             if "/" in m2.group(1):
-                refs.append((f"L{i+1}", os.path.basename(m2.group(1)), int(m2.group(2)), "<inline>"))
+                refs.append((f"L{i + 1}", os.path.basename(m2.group(1)), int(m2.group(2)), "<inline>"))
     # dedupe
     seen = set()
     uniq = []
     for r in refs:
         k = (r[1], r[2], r[3])
         if k not in seen:
-            seen.add(k); uniq.append(r)
+            seen.add(k)
+            uniq.append(r)
 
     ok = desc = diff = oob = miss = 0
     print(f"TOTAL REFS: {len(uniq)}")
     for label, fname, lno, snip in uniq:
         cands = resolve(fname)
         if not cands:
-            print(f"[MISS-FILE] {label} {fname}:{lno}"); miss += 1; continue
+            print(f"[MISS-FILE] {label} {fname}:{lno}")
+            miss += 1
+            continue
         if fname.endswith(".db"):
-            print(f"[DESC] {label} {fname}:{lno} (binary — not comparable)"); desc += 1; continue
+            print(f"[DESC] {label} {fname}:{lno} (binary — not comparable)")
+            desc += 1
+            continue
         if snip == "<inline>" or not is_code_like(snip):
-            print(f"[DESC] {label} {fname}:{lno} desc-anchor: {snip[:80]!r}"); desc += 1; continue
+            print(f"[DESC] {label} {fname}:{lno} desc-anchor: {snip[:80]!r}")
+            desc += 1
+            continue
         best = None
         for c in cands:
             lines = load_lines(os.path.join(REPO, c))
             if lno > len(lines):
                 best = best or (c, "OOB", f"EOF={len(lines)}")
                 continue
-            window = norm(" ".join(lines[max(0, lno - 3):min(len(lines), lno + 2)]))
+            window = norm(" ".join(lines[max(0, lno - 3) : min(len(lines), lno + 2)]))
             if norm(snip) in window:
                 best = (c, "OK", "")
                 break
@@ -113,14 +126,18 @@ def main():
                 best = (c, "DIFF", f"want~{norm(snip)[:85]!r} got@line~{a[:85]!r}")
         c, st, det = best
         if st == "OK":
-            print(f"[OK]   {label} {fname}:{lno} -> {c}"); ok += 1
+            print(f"[OK]   {label} {fname}:{lno} -> {c}")
+            ok += 1
         elif st == "OOB":
-            print(f"[OOB]  {label} {fname}:{lno} -> {c} ({det})"); oob += 1
+            print(f"[OOB]  {label} {fname}:{lno} -> {c} ({det})")
+            oob += 1
         else:
-            print(f"[DIFF] {label} {fname}:{lno} -> {c}\n       {det}"); diff += 1
+            print(f"[DIFF] {label} {fname}:{lno} -> {c}\n       {det}")
+            diff += 1
     print("=" * 70)
     print(f"SUMMARY: ok={ok} desc={desc} diff={diff} oob={oob} miss={miss}")
     sys.exit(1 if (diff or oob or miss) else 0)
+
 
 if __name__ == "__main__":
     main()
