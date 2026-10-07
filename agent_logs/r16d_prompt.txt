@@ -1,0 +1,56 @@
+TASK: R16-W2 — Hermes Web UI shell (`web/`): Next.js + assistant-ui chat with streaming, threads, markdown, source chips.
+
+SCOPE: write ONLY inside `web/**` (new directory at repo root of YOUR worktree). Read-only everywhere else.
+NO git commits/pushes/branches. NO edits to any Python file, gateway/, or anything outside web/.
+
+CONTEXT: this repo (hermes-search-stack) is a search + VN-intelligence server. Target architecture:
+Web UI -> Hermes Agent -> gateway (OpenAI-compatible API) + MCP tools. THIS task builds ONLY the
+frontend shell + a thin server-side proxy. Demo backend = the local gateway at
+http://127.0.0.1:8787 — OpenAI-compatible `/v1/chat/completions`, model `hermes-search`,
+SSE when `"stream": true`. It is ALREADY RUNNING — do not restart/modify/kill it.
+
+DELIVERABLE: `web/` — Next.js app (App Router, TypeScript):
+
+1. Stack: Next.js + TS + Tailwind CSS + shadcn/ui + `@assistant-ui/react`.
+   `npm install` runs INSIDE `web/` only (registry access allowed; commit lockfile in the worktree).
+   Use current stable versions; if a peer-version conflict blocks you for >2 attempts, use the
+   assistant-ui + Vercel-AI-SDK documented pairing and record the decision in `web/README.md`.
+   Add `web/.gitignore` (node_modules, .next, .env*).
+
+2. Server-side proxy `web/src/app/api/chat/route.ts`:
+   - POST `{messages:[{role,content}], stream?:true}` from the browser.
+   - Forwards to `${HERMES_BACKEND_URL}` (default `http://127.0.0.1:8787/v1/chat/completions`),
+     sending `{model: process.env.HERMES_BACKEND_MODEL || "hermes-search", messages, stream:true}`,
+     adding `Authorization: Bearer ${HERMES_BACKEND_KEY}` ONLY when that env is set.
+   - Passes the SSE response through UNBUFFERED (ReadableStream reader loop, flush per chunk).
+   - The backend key stays server-side ONLY (never NEXT_PUBLIC_*).
+
+3. Chat UI (assistant-ui runtime wired to /api/chat):
+   - Thread sidebar: new / switch / rename / delete; persistence via localStorage;
+     auto-title from the first user message.
+   - Streaming assistant messages; markdown rendering (styled code blocks with copy);
+     stop button while streaming; regenerate on the last assistant message; per-message copy.
+   - Composer: Enter=send, Shift+Enter=newline; send disabled while streaming.
+   - Source chips: when an assistant message completes, extract source links from its markdown
+     (inline links + trailing "Nguồn"/"Sources" list) and render a horizontal chip row under the
+     message (hostname label, opens in new tab). Heuristic v1 — document it in README.
+   - Layout: ChatGPT-like — left sidebar + centered main column (max-width ~48rem); responsive
+     down to 768px; dark mode via `prefers-color-scheme`.
+
+4. `web/.env.example` (HERMES_BACKEND_URL / HERMES_BACKEND_MODEL / HERMES_BACKEND_KEY=)
+   + `web/README.md`: run instructions, architecture note (the SAME proxy works later against
+   Hermes api_server `http://127.0.0.1:8642/v1/chat/completions` — env-only swap), decision notes.
+
+ACCEPTANCE — run these, record raw evidence:
+1. `cd web && npm run build` → exit 0 (record last ~15 lines).
+2. `cd web && npm run dev` (background) → serves on :3000; then run:
+   `curl -N -m 30 -X POST http://127.0.0.1:3000/api/chat -H 'content-type: application/json' -d '{"messages":[{"role":"user","content":"Hà Nội có gì đáng chú ý?"}]}'`
+   → SSE chunks stream in (record first ~10 lines).
+3. No secrets committed; only `.env.example`.
+
+RESULT: write `agent_logs/r16d_result.json` (in YOUR worktree) with keys:
+{task:"r16-d", status, files_created:[...], commands_run:[{cmd,exit}], evidence:{build_tail, curl_head},
+decisions:[...], notes}.
+
+CONSTRAINTS: stay inside your worktree; don't touch the running gateway on :8787; no Python changes;
+don't delete/rename anything outside `web/`; keep the demo curl polite (single call).

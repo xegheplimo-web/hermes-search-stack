@@ -96,3 +96,17 @@ Do NOT touch `save_places`, `_record_url`, `_record_text`, `diff`, the CLI, or e
   → `places.save_places`.
 - Offline fallback: `scan_a.jsonl` (5) + `r14d/gosom_places.jsonl` via `providers.gosom_record_to_place`.
 - `data/places.db` is orchestrator-owned: agents never write it; tests use tmp paths.
+
+## §5 W2 `web/` shell contract (r16-d — frozen)
+
+- New dir `web/**` only. Next.js App Router + TypeScript + Tailwind + shadcn/ui + `@assistant-ui/react`;
+  npm installs allowed inside `web/` only; lockfile committed in the worktree.
+- Server-side proxy `web/src/app/api/chat/route.ts` → `HERMES_BACKEND_URL`
+  (default `http://127.0.0.1:8787/v1/chat/completions`; model env `HERMES_BACKEND_MODEL` default
+  `hermes-search`; optional `HERMES_BACKEND_KEY` server-side only). Unbuffered SSE passthrough.
+  The same proxy targets Hermes api_server `:8642/v1/chat/completions` later — env-only swap.
+- UI: thread sidebar (localStorage; new/switch/rename/delete; auto-title), streaming markdown
+  messages (code copy), composer (Enter/Shift+Enter), stop/regenerate/copy, source-chip row
+  (heuristic extraction from markdown links + trailing Nguồn/Sources list — v1, documented).
+- Gates: `npm run build` exit 0 · `npm run dev` + curl SSE demo through the proxy (recorded).
+- Out of scope: session persistence server-side, tool renderers (W3), images (W3), auth (W4).
