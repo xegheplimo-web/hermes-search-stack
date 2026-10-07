@@ -1,0 +1,45 @@
+# TASK r16-f — P0 fix: entity meta-drop in `entity_upsert` (Hermes Search Stack)
+
+You are working in a git worktree at `E:/aoe-native-agent-worktrees/r16-f` (branch `r16-f`, from main).
+Repo: Hermes Search Stack (Python). Windows host; commands run in git-bash. Repo venv python: `.venv/Scripts/python.exe` (run from the worktree root).
+
+## Bug (found by an audit; RE-VERIFY against the actual code before fixing — line numbers may have drifted)
+
+`searchstore/store.py`:
+- `ingest_document()` dedupes on `(url_key, content_sha256)`: on a dedupe hit it returns the existing doc_id WITHOUT updating anything (≈ lines 149–153).
+- `entity_upsert()` (≈ lines 606–683): when a change is detected it calls `ingest_document()` with the merged entity doc, then emits `entity_changed`. The entity doc text is built by the text builder (`_entity_doc_text`-style) from a fixed field set. For META-ONLY changes (status open→closed, rating, website, phone, coordinates, hours, thumbnail, …) the rebuilt text is identical → same sha256 → dedupe hit → **the new meta is silently DROPPED while an `entity_changed` (or `entity_closed`) event is still emitted** — inconsistent state.
+- The no-change path (≈ lines 666–669) already updates meta/last_seen in place — reuse that pattern for "no new version".
+
+## Deliverable 1 — fix (`searchstore/store.py` ONLY)
+
+When `entity_upsert` has non-empty `changes`:
+- Determine whether the entity doc TEXT actually changes: rebuild the doc via the same text builder used on ingest and compare against the currently stored row (ground truth: the stored `content_sha256` of the entity's current doc — query it — or an equally reliable comparison).
+- If text is UNCHANGED (meta-only change): update the existing row IN PLACE — persist the merged meta plus whatever bookkeeping the no-change path bumps — AND still emit the same event(s) that are emitted today for this transition (e.g. `entity_changed`; closed-transition event if that is the current rule). Return the entity id. No new version row.
+- If text CHANGED: keep behavior exactly as today (new version via `ingest_document` + events).
+- Do NOT change `ingest_document`'s generic dedupe behavior for other callers; keep the fix inside the entity layer (in `entity_upsert` or a small private helper in the same file).
+- Minimal diff, follow the file's existing style (sqlite3 usage, error handling).
+
+## Deliverable 2 — regression tests (`tests/test_entity_upsert_meta.py`, NEW file)
+
+Hermetic (tmp DB) — follow the fixture patterns used in `tests/test_searchstore_*.py` / `conftest.py` (read them first).
+
+1. `meta_only_change_updates_meta_in_place` — create an entity with `entity_upsert`; upsert again with ONLY a meta change (e.g. rating 4.5→4.7 + website): assert the NEW values are returned by the read path (`find_entity`/search); an `entity_changed` event was emitted; the documents count for that url_key did NOT increase (in-place, no new version).
+2. `status_closed_meta_only` — status open→closed: meta in DB shows closed; the closed-transition event rule still holds (check how events are emitted for this transition in code; assert accordingly).
+3. `text_change_still_versions` — a change that DOES alter the doc text (verify which fields feed the text builder!): a NEW version row is created (count +1) + events as today.
+4. `no_change_upsert_still_inplace` — identical upsert: no event, last_seen/bookkeeping updated (as today).
+
+Adapt test names/assert style to the real API — the SEMANTICS above are the contract.
+
+## Deliverable 3 — evidence (`agent_logs/r16f_evidence.md`)
+
+Real outputs, not summaries:
+- **BEFORE**: run the new tests against the UNFIXED code FIRST — paste the failing output. It must be the meta-drop assertion failing (not fixture errors).
+- **AFTER**: full suite `.venv/Scripts/python.exe -m pytest` from the worktree root — report the EXIT CODE (repo `addopts` already adds `-q`; read the exit code, the summary line may be suppressed) + last lines.
+- `ruff check .` and `ruff format --check .` (repo pins ruff 0.16.10; use `.venv` if it has ruff) — exit codes.
+- The final `git diff -- searchstore/store.py tests/test_entity_upsert_meta.py`.
+
+## Constraints
+
+- Write ONLY: `searchstore/store.py`, `tests/test_entity_upsert_meta.py`, `agent_logs/r16f_evidence.md`.
+- Do NOT git commit/push, do NOT touch other files, no network calls. Stay inside the worktree.
+- Read-only refs if present: `analysis/audit-full-2026-10-07.md` (P0 section), `tests/test_searchstore_core.py`.

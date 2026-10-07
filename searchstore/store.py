@@ -667,14 +667,22 @@ def entity_upsert(store: SearchStore, entity: dict) -> str:
         with conn:
             conn.execute("UPDATE documents SET meta = ? WHERE id = ?", (_json(merged), doc_id))
         return entity_id
-    store.ingest_document(
-        _entity_doc_url(entity_id),
-        _entity_doc_text(merged),
-        title=str(merged.get("name") or name),
-        provider=str(meta.get("source") or source),
-        format=ENTITY_FORMAT,
-        meta=merged,
-    )
+    new_text = _entity_doc_text(merged)
+    current = conn.execute("SELECT content_sha256 FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    if current is not None and current["content_sha256"] == content_sha256(new_text):
+        # Meta-only change: identical doc text would hit ingest_document's
+        # (url_key, sha256) dedupe and silently drop the new meta — update in place.
+        with conn:
+            conn.execute("UPDATE documents SET meta = ? WHERE id = ?", (_json(merged), doc_id))
+    else:
+        store.ingest_document(
+            _entity_doc_url(entity_id),
+            new_text,
+            title=str(merged.get("name") or name),
+            provider=str(meta.get("source") or source),
+            format=ENTITY_FORMAT,
+            meta=merged,
+        )
     kind = "entity_closed" if merged.get("status") == "closed" and meta.get("status") != "closed" else "entity_changed"
     store.record_event(
         kind,
