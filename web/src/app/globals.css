@@ -145,3 +145,34 @@ body {
 .aui-md strong {
   font-weight: 600;
 }
+
+/* ---- PlacesToolUI map markers (.hermes-place-marker) --------------------- */
+
+.hermes-place-marker {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.hermes-place-marker:hover {
+  transform: scale(1.15);
+}
+
+.hermes-place-marker[data-selected="true"] {
+  background: #dc2626;
+  transform: scale(1.3);
+}
+
+.hermes-place-popup .maplibregl-popup-content {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+}

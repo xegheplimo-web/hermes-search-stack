@@ -20,6 +20,9 @@ import type { FC } from "react";
 import { cn } from "@/lib/utils";
 import { MarkdownText } from "./markdown-text";
 import { SourceChips } from "./source-chips";
+import { SourcesDrawer } from "./sources-drawer";
+import { PlacesToolUI } from "@/components/tools/places-tool-ui";
+import { ResearchStatusUI } from "@/components/tools/research-status-ui";
 
 const iconBtn =
   "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40";
@@ -83,7 +86,14 @@ const AssistantActionBar: FC = () => (
 const AssistantMessage: FC = () => (
   <MessagePrimitive.Root className="group flex flex-col">
     <div className="max-w-none text-[15px]">
-      <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      <MessagePrimitive.Parts
+        components={{
+          Text: MarkdownText,
+          // Rich event parts (§6): hermes_places tool calls and status frames.
+          tools: { by_name: { hermes_places: PlacesToolUI } },
+          data: { by_name: { status: ResearchStatusUI } },
+        }}
+      />
       <MessagePrimitive.Error>
         <div className="mt-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
           The assistant hit an error. Try again or regenerate.
@@ -91,6 +101,7 @@ const AssistantMessage: FC = () => (
       </MessagePrimitive.Error>
     </div>
     <SourceChips />
+    <SourcesDrawer />
     <AssistantActionBar />
   </MessagePrimitive.Root>
 );

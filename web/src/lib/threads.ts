@@ -8,7 +8,7 @@ const ACTIVE_KEY = "hermes-web.active-thread.v1";
 const UNTITLED = "New chat";
 const TITLE_LEN = 48;
 
-function newThread(): ChatThread {
+function newThread(opts?: { demo?: boolean }): ChatThread {
   const now = Date.now();
   return {
     id: `t_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -16,6 +16,7 @@ function newThread(): ChatThread {
     createdAt: now,
     updatedAt: now,
     messages: [],
+    ...(opts?.demo ? { demo: true } : {}),
   };
 }
 
@@ -88,8 +89,8 @@ export function useThreadStore() {
     }
   }, [mounted, threads, activeId]);
 
-  const createThread = useCallback(() => {
-    const t = newThread();
+  const createThread = useCallback((opts?: { demo?: boolean }) => {
+    const t = newThread(opts);
     setThreads((ts) => [t, ...ts]);
     setActiveId(t.id);
     return t.id;
