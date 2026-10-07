@@ -183,3 +183,78 @@ tools.py
 db.py
 searchstore
 store.py
+778
+779
+780
+781
+782
+783
+784
+785
+786
+787
+788
+789
+790
+791
+792
+793
+794
+795
+796
+797
+798
+799
+800
+801
+802
+803
+    row = conn.execute("SELECT 
+    value FROM kv WHERE key = ?
+    ", 
+    (ENTITY_DIFF_WATERMARK_KEY,))
+    .fetchone()
+    watermark = 0
+    if row is not None:
+        try:
+            watermark = int(row
+            ["value"])
+        except (TypeError, 
+        ValueError):
+            watermark = 0
+    rows = conn.execute(
+        "SELECT id, ts, kind, 
+        payload FROM events 
+        WHERE kind GLOB 
+        'entity_*' AND id > ? 
+        ORDER BY id",
+        (watermark,),
+    ).fetchall()
+    events: list[dict] = []
+    for r in rows:
+        try:
+            payload = json.loads
+            (r["payload"] or "{}
+            ")
+        except json.
+        JSONDecodeError:
+            payload = {}
+        events.append({"id": r
+        ["id"], "ts": r["ts"], 
+        "kind": r["kind"], 
+        **payload})
+    if rows:
+        with conn:
+            conn.execute(
+                "INSERT OR 
+                REPLACE INTO kv
+                (key, value) 
+                VALUES(?, ?)",
+                (ENTITY_DIFF_WATE
+                RMARK_KEY, str
+                (rows[-1]
+                ["id"])),
+            )
+    return events
+770
+def entity_events(conn: sqlite3.

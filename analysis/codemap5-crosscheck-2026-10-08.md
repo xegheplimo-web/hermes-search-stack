@@ -31,6 +31,15 @@
 
 ## 4. Files
 
-- `analysis/codemap5-searchstore-hybrid-devin-2026-10-08.txt` — snapshot full (185 dòng).
+- `analysis/codemap5-searchstore-hybrid-devin-2026-10-08.txt` — snapshot (bản đầy đủ **260 dòng** sau re-fetch kèm preview panels; bản capture đầu 185 dòng thiếu panels nhưng refs y hệt).
 - Đối chiếu #4 (đầy đủ mô tả): `analysis/codemap4-crosscheck-2026-10-07.md`; spec R18 runtime-verified: skill `hermes-web-search-stack` §R18 + doc #4 §4-5.
 - Script: `scripts/codemap_refs_check.py` (v3, default = codemap mới nhất).
+
+## 5. Addendum — re-fetch cùng URL (2026-10-08, sau regen của Devin)
+
+Sếp gửi lại cùng URL → re-fetch (kèm deep-scroll cả inner containers): trang render thêm phần cuối.
+- **Phân tích (sections 1–5 + "Key entry points"): y hệt bản đã đối chiếu** — refs set **29 không đổi** (0 thêm / 0 bớt) → verdict **29/29 giữ nguyên**.
+- **Delta duy nhất = code preview panels** (lazy-load cuối trang, hiển thị code `store.py`):
+  - đoạn `store.py:1–31` (docstring, imports, `url_key` header) — verified khớp từng chữ;
+  - đoạn `store.py:770–801` (`def entity_events` + kv watermark) — verified khớp từng chữ (grep: def@770, `row = conn.execute(...)`@778, kv insert ~800).
+- **Kết luận: không drift, không refs mới, không action.** Capture đầy đủ 260 dòng; bài học fetch đã ghi vào `references/codemap-crosscheck.md` §1 (skill lead-orchestrator).
