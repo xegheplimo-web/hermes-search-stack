@@ -5,7 +5,7 @@ Thin, SDK-free wrappers over the engine and repo modules, per
 every failure is returned as a structured ``{"error": ...}`` payload.
 
 Binding: :func:`make_tools` captures an engine (plus an optional backend and
-store-db override) and returns six plain callables with the frozen names and
+store-db override) and returns seven plain callables with the frozen names and
 signatures. ``gateway/mcp/server.py`` registers them on the MCP server.
 """
 
@@ -27,6 +27,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "hermes_fact_check",
     "hermes_store_query",
     "hermes_vn",
+    "hermes_places",
 )
 
 #: Frozen parameter contracts from r8-interfaces.md section 7.
@@ -43,6 +44,10 @@ FROZEN_TOOL_PARAMS: dict[str, dict[str, Any]] = {
     "hermes_vn": {
         "required": ("kind", "query"),
         "defaults": {"area": None, "days": None},
+    },
+    "hermes_places": {
+        "required": ("query",),
+        "defaults": {"area": None, "category": None, "min_rating": None, "count": 8},
     },
 }
 
@@ -108,16 +113,19 @@ def make_tools(
     *,
     backend: Any | None = None,
     store_db: str | None = None,
+    places_db: str | None = None,
 ) -> dict[str, Callable[..., dict]]:
-    """Build the six frozen tools bound to *engine*.
+    """Build the seven frozen tools bound to *engine*.
 
     *backend* overrides ``engine.backend`` when given (the engine exposes
     its backend; the override exists for tests and embedding). *store_db*
-    overrides the engine config's ``store_db`` path.
+    overrides the engine config's ``store_db`` path. *places_db* overrides
+    the default ``<repo_root>/data/places.db`` path for ``hermes_places``.
     """
     active_backend = _resolve_backend(engine, backend)
     store_path = _resolve_store_path(engine, store_db)
     repo_root = _resolve_repo_root(engine)
+    places_path = str(places_db) if places_db else str(repo_root / "data" / "places.db")
 
     def hermes_search(query: str, max_results: int = 10) -> dict:
         """Search the web via the engine backend.
@@ -404,6 +412,71 @@ def make_tools(
             return _vn_business_query(query, area=area)
         return _vn_store_query(store_path, norm_kind, query, area=area, days=days)
 
+    def hermes_places(
+        query: str,
+        area: str | None = None,
+        category: str | None = None,
+        min_rating: float | None = None,
+        count: int = 8,
+    ) -> dict:
+        """Query the local places db via ``vn_geo.places`` (r16 §1).
+
+        Returns ``{ok, kind: "places", query, area, count, places,
+        viewport}``: a blank *query* browses (``text=None``), *count* is
+        clamped to 1..50, and rows map 1:1 onto the frozen Place schema.
+        Never raises — a missing db or query failure returns ``ok=False``
+        with an ``error`` string.
+        """
+        text = query.strip() if isinstance(query, str) else ""
+        text = text or None
+        try:
+            limit = max(1, min(50, int(count)))
+        except (TypeError, ValueError):
+            limit = 8
+        error_base = {
+            "ok": False,
+            "kind": "places",
+            "query": query,
+            "area": area,
+            "count": 0,
+            "places": [],
+            "viewport": None,
+        }
+        path = Path(places_path)
+        if not path.exists():
+            return {**error_base, "error": f"places db not found at {path}"}
+        try:
+            from searchstore import SearchStore
+        except ImportError as exc:
+            return {**error_base, "error": f"searchstore not available: {exc}"}
+        try:
+            from vn_geo import places as vn_places
+        except Exception as exc:  # noqa: BLE001 — module absent/broken/mid-edit
+            return {**error_base, "error": f"vn_geo.places not available: {exc}"}
+        try:
+            with SearchStore(str(path)) as store:
+                rows = vn_places.query_places(
+                    store,
+                    text=text,
+                    area=area,
+                    category=category,
+                    min_rating=min_rating,
+                    limit=limit,
+                )
+            places = [_place_row(row) for row in rows or [] if isinstance(row, dict)]
+            viewport = _places_viewport(places)
+        except Exception as exc:  # noqa: BLE001 — structured error, never raise
+            return {**error_base, "error": f"places query failed: {exc}"}
+        return {
+            "ok": True,
+            "kind": "places",
+            "query": query,
+            "area": area,
+            "count": len(places),
+            "places": places,
+            "viewport": viewport,
+        }
+
     return {
         "hermes_search": hermes_search,
         "hermes_extract": hermes_extract,
@@ -411,6 +484,65 @@ def make_tools(
         "hermes_fact_check": hermes_fact_check,
         "hermes_store_query": hermes_store_query,
         "hermes_vn": hermes_vn,
+        "hermes_places": hermes_places,
+    }
+
+
+# ---------------------------------------------------------------------------
+# hermes_places helpers
+# ---------------------------------------------------------------------------
+
+
+def _place_row(row: dict) -> dict:
+    """Map a ``query_places`` row onto the frozen §1 Place object.
+
+    Fields pass through 1:1; the tool computes only ``id`` (the doc url =
+    stable identity) and ``url`` (clickable ``source_url`` when the r16-b
+    enrichment provides it, else ``id``). All keys are read via ``.get()``
+    so the mapping works before and after r16-b lands.
+    """
+    doc_url = row.get("url")
+    return {
+        "id": doc_url,
+        "name": row.get("name"),
+        "source": row.get("source"),
+        "address": row.get("address"),
+        "lat": row.get("lat"),
+        "lon": row.get("lon"),
+        "rating": row.get("rating"),
+        "review_count": row.get("review_count"),
+        "category": row.get("category"),
+        "phone": row.get("phone"),
+        "website": row.get("website"),
+        "hours": row.get("hours"),
+        "thumbnail": row.get("thumbnail"),
+        "url": row.get("source_url") or doc_url,
+        "scanned_at": row.get("scanned_at"),
+    }
+
+
+def _is_num(value: Any) -> bool:
+    """True for real numeric lat/lon values (bool excluded)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _places_viewport(places: list[dict]) -> dict | None:
+    """Map viewport over places with numeric lat+lon (§1).
+
+    ``bbox`` is ``[min_lon, min_lat, max_lon, max_lat]`` (MapLibre
+    LngLatBounds order); ``center`` is the bbox midpoint ``[lon, lat]``.
+    No coordinates at all -> ``None``; a single point -> degenerate bbox.
+    """
+    points = [(float(p["lat"]), float(p["lon"])) for p in places if _is_num(p.get("lat")) and _is_num(p.get("lon"))]
+    if not points:
+        return None
+    lats = [lat for lat, _ in points]
+    lons = [lon for _, lon in points]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+    return {
+        "center": [(min_lon + max_lon) / 2, (min_lat + max_lat) / 2],
+        "bbox": [min_lon, min_lat, max_lon, max_lat],
     }
 
 

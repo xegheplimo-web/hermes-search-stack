@@ -125,11 +125,11 @@ def _seed_store(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_tool_registry_has_exact_six_names(stub_engine):
+def test_tool_registry_has_exact_seven_names(stub_engine):
     server = build_mcp(stub_engine)
     listed = asyncio.run(server.list_tools())
     assert sorted(t.name for t in listed) == sorted(TOOL_NAMES)
-    assert len(listed) == 6
+    assert len(listed) == 7
 
 
 def test_tool_param_schemas_match_frozen(stub_engine):
