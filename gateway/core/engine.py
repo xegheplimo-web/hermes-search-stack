@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from gateway.core.router import build_signals, decide, query_markers, split_query
 from gateway.protocols import EvidenceItem, ExtractItem, SearchItem
+from gateway.security.admission import ADMISSION_WAIT_MS
 
 if TYPE_CHECKING:
     from gateway.config import GatewayConfig
@@ -41,6 +42,22 @@ def _normalize_url(url: str) -> str:
         u = u.split("#", 1)[0]
     stripped = u.rstrip("/")
     return stripped or u
+
+
+def _request_deadline_s(config) -> float:
+    """Per-request deadline in seconds; ``<= 0`` disables the watchdog."""
+    try:
+        return float(getattr(config, "request_deadline_s", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _admission_wait_ms() -> float:
+    """Queue wait recorded by the admission middleware; 0 outside the app."""
+    try:
+        return max(0.0, float(ADMISSION_WAIT_MS.get(0.0) or 0.0))
+    except Exception:  # noqa: BLE001 — a broken context must not kill the query
+        return 0.0
 
 
 @dataclass(slots=True)
@@ -84,6 +101,7 @@ class Engine:
         backend: SearchBackend | None = None,
         synth=None,
         cache=None,
+        metrics=None,
     ):
         self.config = config
         self._backend = backend
@@ -91,6 +109,8 @@ class Engine:
         self._cache = cache
         self._cache_failed = False
         self._cache_error: str | None = None
+        # Optional GatewayMetrics sink (additive); deadline hits count as timeouts.
+        self.metrics = metrics
 
     @property
     def backend(self) -> SearchBackend:
@@ -127,6 +147,28 @@ class Engine:
         timings: dict[str, int] = {}
         t0 = _ms()
         query = str(query or "").strip()
+
+        # R15-D watchdog: the admission queue wait counts against the request
+        # deadline (it is part of the caller-visible latency). ``<= 0``
+        # disables the check entirely. The deadline is cooperative — it is
+        # tested between stages, skips optional work, and never raises.
+        admission_wait = _admission_wait_ms()
+        timings["admission_wait_ms"] = int(admission_wait)
+        timings["deadline_exceeded"] = 0
+        deadline_s = _request_deadline_s(self.config)
+        deadline_at = (t0 - admission_wait) + deadline_s * 1000.0 if deadline_s > 0 else None
+        deadline_hit = False
+
+        def deadline_passed() -> bool:
+            nonlocal deadline_hit
+            if deadline_hit:
+                return True
+            if deadline_at is None or _ms() <= deadline_at:
+                return False
+            deadline_hit = True
+            warnings.append(f"request deadline exceeded ({deadline_s:g}s) — partial result")
+            self._note_timeout()
+            return True
 
         # 1) cache-first: a fresh verified pack serves with no live calls.
         if allow_cache:
@@ -174,17 +216,26 @@ class Engine:
         yield {"type": "route", "depth": mode, "cached": False, "reason": reason}
 
         # 3) evidence building: fast = top <=4 extracts; deep = <=3 queries,
-        #    <=8 extracts, trust-ordered.
+        #    <=8 extracts, trust-ordered. Deadline between stages: a spent
+        #    budget skips the deep sub-searches and paid extraction — the
+        #    probe snippets are the best available partial evidence.
         t = _ms()
         search_items: list[SearchItem] = list(probe)
-        if mode == "deep":
+        if mode == "deep" and not deadline_passed():
             # Probe already ran query #1; multi_part adds simple sub-splits,
             # capped so the total stays <= config.deep_search_queries.
             sub_queries = (
                 split_query(query, max_parts=self.config.deep_search_queries - 1) if markers.get("multi_part") else []
             )
             for q in sub_queries:
+                if deadline_passed():
+                    break
                 search_items.extend(self._safe_search(q, self.config.fast_max_results, errors, warnings))
+        if deadline_passed():
+            cap = self.config.deep_extract if mode == "deep" else self.config.fast_extract
+            evidence = _search_items_to_evidence(search_items[: max(0, cap)])
+            trust_by_url = {}
+        elif mode == "deep":
             urls = _dedupe_urls(search_items)[: max(0, self.config.deep_extract)]
             evidence = self._extract_evidence(urls, search_items, errors, warnings)
             evidence, trust_by_url = self._trust_order(evidence, warnings)
@@ -242,11 +293,14 @@ class Engine:
         ]
 
         # 5) deep only: fact_check gate -> research_pack -> AnswerCache.put.
-        if mode == "deep":
+        #    Publishing is optional work — skipped once the deadline is spent.
+        if mode == "deep" and not deadline_passed():
             t = _ms()
             self._verify_and_publish(query, answer, evidence, trust_by_url, warnings)
             timings["verify_ms"] = int(_ms() - t)
 
+        deadline_passed()  # catch overruns inside extract/synth on any mode
+        timings["deadline_exceeded"] = int(deadline_hit)
         timings["total_ms"] = int(_ms() - t0)
         yield {
             "type": "done",
@@ -262,6 +316,17 @@ class Engine:
         }
 
     # ---------- internals ----------
+
+    def _note_timeout(self) -> None:
+        """Count a deadline hit on the optional metrics sink; never raises."""
+        metrics = getattr(self, "metrics", None)
+        record = getattr(metrics, "record_timeout", None)
+        if not callable(record):
+            return
+        try:
+            record()
+        except Exception:  # noqa: BLE001 — metrics must never kill the flow
+            pass
 
     def _get_backend(self):
         if self._backend is None:
