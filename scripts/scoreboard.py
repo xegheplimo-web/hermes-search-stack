@@ -7,6 +7,12 @@ statistics, compares the latest run against the previous
 ``results/scoreboard.json`` for a trend, and writes
 ``analysis/scoreboard.md`` + ``results/scoreboard.json``.
 
+R15-A gap scaffold: also reads the newest ``results/r15_corpus_*.json`` and,
+when ``results/reference/*.json`` exists, reports ``reference_pass_rate`` and
+``gap_pp`` (percentage points; positive = behind reference) under a ``gap``
+key. When the reference directory is missing/empty the scaffold warns on
+stderr and the run still completes with exit 0.
+
 Frozen contract: ``analysis/r6-interfaces.md`` section 6. Design rules:
   * stdlib-only, deterministic, no network;
   * malformed or missing input files produce a warning on stderr and are
@@ -42,6 +48,8 @@ DEFAULT_LAST = 5
 BATTERY_GLOB = "battery_*.json"
 KEYLESS_GLOB = "keyless_*.json"
 CORPUS_GLOB = "r10_corpus_*.json"
+CORPUS_V1_GLOB = "r15_corpus_*.json"
+REFERENCE_DIR_NAME = "reference"
 SCOREBOARD_NAME = "scoreboard.json"
 
 # Float-dust guard for the nearest-rank ceil: a product that should be an
@@ -210,6 +218,64 @@ def discover_corpus_runs(results_dir: Path | str, last: int) -> list[Path]:
     return corpus
 
 
+def _newest_file(results_dir: Path, glob_pattern: str) -> Path | None:
+    """Return the newest file matching ``glob_pattern`` by mtime (None if none)."""
+    files = list(results_dir.glob(glob_pattern))
+    if not files:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime)
+
+
+def _pass_rate(path: Path) -> float | None:
+    """Pass rate (0..1) of a battery-compatible run file, or None if unknown."""
+    try:
+        payload = _load_json(path)
+    except ValueError as exc:
+        _warn(str(exc))
+        return None
+    cases = payload.get("cases") if isinstance(payload, dict) else None
+    if not isinstance(cases, list):
+        return None
+    total = len(cases)
+    if total == 0:
+        return None
+    passed = sum(1 for case in cases if isinstance(case, dict) and case.get("pass"))
+    return passed / total
+
+
+def build_gap(results_dir: Path | str) -> dict | None:
+    """R15-A gap scaffold: compare the newest ``r15_corpus_*.json`` run
+    against the newest reference trace under ``results/reference/``.
+
+    Returns a dict with ``reference_pass_rate`` and ``gap_pp`` (percentage
+    points; positive = behind reference) when both sides exist. When the
+    reference directory is missing/empty, warns on stderr and returns None
+    (the run still completes with exit 0). When no current corpus run exists,
+    returns None silently (gap scaffold not yet applicable).
+    """
+    results_dir = Path(results_dir)
+    current = _newest_file(results_dir, CORPUS_V1_GLOB)
+    if current is None:
+        return None
+    ref_dir = results_dir / REFERENCE_DIR_NAME
+    ref_files = sorted(ref_dir.glob("*.json")) if ref_dir.is_dir() else []
+    if not ref_files:
+        _warn(f"{REFERENCE_DIR_NAME}/ not found or empty; skipping gap scaffold")
+        return None
+    reference = max(ref_files, key=lambda p: p.stat().st_mtime)
+    current_rate = _pass_rate(current)
+    reference_rate = _pass_rate(reference)
+    if current_rate is None or reference_rate is None:
+        _warn("gap scaffold: could not compute pass rate; skipping")
+        return None
+    return {
+        "reference_pass_rate": _round(reference_rate),
+        "gap_pp": _round((reference_rate - current_rate) * 100),
+        "reference_file": reference.name,
+        "current_file": current.name,
+    }
+
+
 def load_runs(results_dir: Path | str, last: int) -> tuple[list[dict], list[dict]]:
     """Discover + parse runs; malformed files warn on stderr and are skipped."""
     battery_paths, keyless_paths = discover_runs(results_dir, last)
@@ -321,13 +387,19 @@ def build_scoreboard(
     latest = runs[-1] if runs else None
     prev_path = Path(previous_path) if previous_path is not None else results_dir / SCOREBOARD_NAME
     previous = _load_previous(prev_path)
-    return {
+    gap = build_gap(results_dir)
+    payload: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "runs": runs,
         "keyless": keyless,
         "latest": latest,
         "trend": _trend(latest, previous),
     }
+    # R15-A: only report the gap when a reference trace exists (else the
+    # scaffold warns on stderr and the run still completes with exit 0).
+    if gap is not None:
+        payload["gap"] = gap
+    return payload
 
 
 # ─── markdown rendering ──────────────────────────────────────────────────────
@@ -425,6 +497,16 @@ def render_markdown(sb: dict, results_dir: Path | str) -> str:
         )
         lines.append("")
     lines.append(f"_{note}_")
+    lines.append("")
+
+    gap = sb.get("gap")
+    lines.append("## Gap scaffold (R15-A)")
+    lines.append("")
+    if not gap:
+        lines.append("No reference trace available; gap not computed.")
+    else:
+        lines.append(f"- reference_pass_rate: {_fmt_s(gap.get('reference_pass_rate'))} (`{gap.get('reference_file')}`)")
+        lines.append(f"- gap_pp: {_fmt_delta(gap.get('gap_pp'))} pp (current `{gap.get('current_file')}`)")
     lines.append("")
 
     lines.append("## Keyless runs")

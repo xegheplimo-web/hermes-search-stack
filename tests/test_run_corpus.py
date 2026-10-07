@@ -279,3 +279,186 @@ def test_scoreboard_ingests_corpus_output(tmp_path):
     corpus_run = next(r for r in batteries if r["file"].startswith("r10_corpus_"))
     assert corpus_run["total"] == 2
     assert "corpus" in corpus_run["kinds"]
+
+
+# ─── R15-A corpus_v1 validity ────────────────────────────────────────────
+
+CORPUS_V1_PATH = REPO_ROOT / "evals" / "r9" / "corpus_v1.jsonl"
+
+ALLOWED_SEVERITY = {"S0", "S1", "S2", "S3"}
+ALLOWED_GTS = {"official", "human-reviewed", "key", "derived"}
+
+
+def _load_jsonl(path: Path) -> list[dict]:
+    rows = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def test_corpus_v1_has_68_lines_unique_ids():
+    rows = _load_jsonl(CORPUS_V1_PATH)
+    assert len(rows) == 68
+    ids = [r["id"] for r in rows]
+    assert len(set(ids)) == 68
+
+
+def test_corpus_v1_preserves_v0_queries_and_must_include():
+    v0 = {r["id"]: r for r in _load_jsonl(CORPUS_PATH)}
+    v1 = {r["id"]: r for r in _load_jsonl(CORPUS_V1_PATH)}
+    assert len(v0) == 50
+    for cid, old in v0.items():
+        assert cid in v1, f"{cid} missing from corpus_v1"
+        new = v1[cid]
+        assert new["query"] == old["query"], f"{cid} query regressed"
+        assert new["expected"]["must_include"] == old["expected"]["must_include"], f"{cid} must_include regressed"
+
+
+def test_corpus_v1_new_cases_have_severity_and_ground_truth_source():
+    v1 = {r["id"]: r for r in _load_jsonl(CORPUS_V1_PATH)}
+    new_ids = [f"vn-{n:03d}" for n in range(51, 69)]
+    for cid in new_ids:
+        assert cid in v1, f"{cid} missing from corpus_v1"
+        case = v1[cid]
+        assert case.get("severity") in ALLOWED_SEVERITY, f"{cid} bad severity"
+        assert case.get("ground_truth_source") in ALLOWED_GTS, f"{cid} bad ground_truth_source"
+
+
+def test_corpus_v1_ground_truth_source_never_model():
+    rows = _load_jsonl(CORPUS_V1_PATH)
+    for row in rows:
+        assert str(row.get("ground_truth_source", "")).lower() not in {"model", "llm"}, row["id"]
+
+
+def test_corpus_v1_holdout_excluded_from_default_splits():
+    corpus = run_corpus.load_corpus(CORPUS_V1_PATH)
+    holdout = _holdout_ids()
+    selected = run_corpus.select_cases(corpus, holdout, ["regression", "challenge"], False, None, None, False)
+    selected_ids = {case["id"] for case, _, _ in selected}
+    for cid in selected_ids:
+        assert int(cid[3:]) % 10 != 5, f"holdout {cid} leaked into default splits"
+    assert not selected_ids & holdout
+
+
+# ─── R15-A severity-weighted pass rate ───────────────────────────────────
+
+
+def _swpr_case(severity: str, passed: bool) -> dict:
+    return {"id": f"t-{severity}-{passed}", "severity": severity, "pass": passed}
+
+
+def test_severity_weighted_pass_rate_mixed_math():
+    cases = [
+        _swpr_case("S0", True),  # 4.0 pass
+        _swpr_case("S0", False),  # 4.0 fail
+        _swpr_case("S1", True),  # 2.0 pass
+        _swpr_case("S2", True),  # 1.0 pass
+        _swpr_case("S3", False),  # 0.5 fail
+    ]
+    # weighted pass = 4 + 2 + 1 = 7; total = 4+4+2+1+0.5 = 11.5
+    assert run_corpus.severity_weighted_pass_rate(cases) == pytest.approx(7.0 / 11.5)
+
+
+def test_severity_weighted_pass_rate_weights():
+    assert run_corpus.SEVERITY_WEIGHTS == {"S0": 4.0, "S1": 2.0, "S2": 1.0, "S3": 0.5}
+    assert run_corpus.severity_weighted_pass_rate([_swpr_case("S0", True)]) == pytest.approx(1.0)
+    assert run_corpus.severity_weighted_pass_rate([_swpr_case("S3", False)]) == pytest.approx(0.0)
+
+
+def test_severity_weighted_pass_rate_empty_is_none():
+    assert run_corpus.severity_weighted_pass_rate([]) is None
+
+
+# ─── R15-A p95 (nearest-rank, not p90) ───────────────────────────────────
+
+
+def test_p95_latency_nearest_rank_not_p90():
+    values = [float(v) for v in range(1, 21)]  # 1..20: p90 -> 18, p95 -> 19
+    assert run_corpus._pct(values, 90) == pytest.approx(18.0)
+    assert run_corpus._pct(values, 95) == pytest.approx(19.0)
+
+
+def test_dry_run_v1_emits_v2_aggregates(tmp_path):
+    rc = run_corpus.main(
+        ["--dry-run", "--corpus", str(CORPUS_V1_PATH), "--out-dir", str(tmp_path), "--limit", "4", "--sleep", "1"]
+    )
+    assert rc == 0
+    payloads = list(tmp_path.glob("r15_corpus_*.json"))
+    assert len(payloads) == 1
+    payload = json.loads(payloads[0].read_text(encoding="utf-8"))
+    assert set(payload["aggregates"]) == {
+        "severity_weighted_pass_rate",
+        "p50_latency_s",
+        "p95_latency_s",
+        "variant_consistency_avg",
+    }
+    for case in payload["cases"]:
+        assert "severity" in case and "variant_consistency" in case
+
+
+# ─── R15-A variant consistency ───────────────────────────────────────────
+
+
+def test_variant_consistency_avg_mean_over_variant_cases_only():
+    cases = [
+        {"id": "vn-001:main", "base_id": "vn-001", "pass": True, "variant_consistency": 0.5, "has_variants": True},
+        {
+            "id": "vn-001:variant-0",
+            "base_id": "vn-001",
+            "pass": False,
+            "variant_consistency": 0.5,
+            "has_variants": True,
+        },
+        {"id": "vn-002", "base_id": "vn-002", "pass": True, "variant_consistency": 1.0, "has_variants": False},
+    ]
+    assert run_corpus.variant_consistency_avg(cases) == pytest.approx(0.5)
+
+
+def test_variant_consistency_avg_none_without_variants():
+    cases = [{"id": "vn-002", "base_id": "vn-002", "pass": True, "variant_consistency": 1.0, "has_variants": False}]
+    assert run_corpus.variant_consistency_avg(cases) is None
+    assert run_corpus.variant_consistency_avg([]) is None
+
+
+def test_dry_run_variant_probes_share_passed_over_probes(tmp_path):
+    corpus_path = tmp_path / "mini.jsonl"
+    corpus_path.write_text(
+        json.dumps(
+            {
+                "id": "vn-101",
+                "difficulty": "easy",
+                "domain": "law",
+                "query": "q main",
+                "variants": ["q v1", "q v2"],
+                "expected": {"must_include": [], "must_not_include": [], "required_fields": []},
+                "ground_truth": {"status": "stable", "source": "x", "checked_at": None},
+                "severity": "S1",
+                "ground_truth_source": "key",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rc = run_corpus.main(
+        [
+            "--dry-run",
+            "--corpus",
+            str(corpus_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--variants",
+            "--split",
+            "regression",
+            "--sleep",
+            "1",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(next((tmp_path / "out").glob("r15_corpus_*.json")).read_text(encoding="utf-8"))
+    assert len(payload["cases"]) == 3  # main + 2 variants
+    for case in payload["cases"]:
+        assert case["variant_consistency"] == pytest.approx(1.0)  # 3 passed / 3 probes
+    assert payload["aggregates"]["variant_consistency_avg"] == pytest.approx(1.0)

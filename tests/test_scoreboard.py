@@ -352,3 +352,53 @@ def test_main_last_must_be_positive(tmp_path):
             ]
         )
     assert exc.value.code == 2
+
+
+# ─── R15-A gap scaffold ──────────────────────────────────────────────────
+
+
+def _write_run(path: Path, passes: int, total: int) -> None:
+    cases = [{"id": f"vn-{i:03d}", "pass": i < passes, "latency_s": 1.0} for i in range(total)]
+    path.write_text(
+        json.dumps(
+            {
+                "generated": "2026-10-07T00:00:00",
+                "live_calls": 0,
+                "cases": cases,
+                "totals": {"pass": passes, "fail": total - passes, "total": total, "elapsed_s": 1.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_build_gap_no_current_run_returns_none(tmp_path):
+    assert scoreboard.build_gap(tmp_path) is None
+
+
+def test_build_gap_no_reference_warns_and_returns_none(tmp_path, capsys):
+    _write_run(tmp_path / "r15_corpus_20261007_000000.json", 1, 2)
+    assert scoreboard.build_gap(tmp_path) is None
+    assert "reference" in capsys.readouterr().err.lower()
+
+
+def test_build_gap_math_positive_means_behind(tmp_path):
+    _write_run(tmp_path / "r15_corpus_20261007_000000.json", 2, 4)  # current 0.5
+    ref_dir = tmp_path / "reference"
+    ref_dir.mkdir()
+    _write_run(ref_dir / "ref.json", 3, 4)  # reference 0.75
+    gap = scoreboard.build_gap(tmp_path)
+    assert gap is not None
+    assert gap["reference_pass_rate"] == pytest.approx(0.75)
+    assert gap["gap_pp"] == pytest.approx(25.0)  # (0.75 - 0.5) * 100
+    assert gap["reference_file"] == "ref.json"
+    assert gap["current_file"] == "r15_corpus_20261007_000000.json"
+
+
+def test_build_gap_malformed_reference_warns_no_crash(tmp_path, capsys):
+    _write_run(tmp_path / "r15_corpus_20261007_000000.json", 1, 2)
+    ref_dir = tmp_path / "reference"
+    ref_dir.mkdir()
+    (ref_dir / "broken.json").write_text("{not json", encoding="utf-8")
+    assert scoreboard.build_gap(tmp_path) is None
+    assert "broken.json" in capsys.readouterr().err

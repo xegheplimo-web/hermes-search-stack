@@ -1,11 +1,15 @@
-# R9-C — Vietnamese Evaluation Corpus v0
+# R9-C / R15-A — Vietnamese Evaluation Corpus (v0 + v1)
 
-Durable benchmark of **50 realistic Vietnamese user queries** for continuous
+Durable benchmark of realistic Vietnamese user queries for continuous
 quality work on hermes-search-stack (law/decrees, admin procedures, local
 places, news, gold/fuel prices, weather).
 
-- Data: `corpus_v0.jsonl` — exactly 50 lines, one JSON object per line.
-- This file is the **schema reference + verification guide**. Wave 2 assigns
+- Data: `corpus_v0.jsonl` — exactly 50 lines (frozen, schema v0).
+- Data: `corpus_v1.jsonl` — 68 lines (schema v2): all 50 v0 cases preserved
+  (ids/queries/`must_include` unchanged) **plus 18 NEW harder cases**
+  (vn-051…vn-068: multi-part VN, freshness-sensitive, all with `variants`).
+  Each case carries `severity` (S0–S3) and `ground_truth_source`.
+- These files are the **schema reference + verification guide**. Wave 2 assigns
   live ground truth; this wave only defines the questions, expectations, and
   where to verify them.
 
@@ -28,6 +32,18 @@ Every line has ALL keys:
 | `ground_truth.source` | string | authoritative source to verify against in wave 2; `TBD` for `verify-later` where the exact article/lookup is not yet pinned |
 | `ground_truth.checked_at` | null | always `null` in v0; wave 2 fills in verification timestamp |
 | `notes` | string | why the case exists / what makes it hard / what wave 2 must do |
+
+### Schema v2 (corpus_v1.jsonl)
+
+`corpus_v1.jsonl` adds two keys to every case (v0 cases preserved with
+ids/queries/`must_include` unchanged):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `severity` | enum | `S0` wrong answer → direct financial/legal/safety harm (penalties, prices, taxes, insurance, weather safety, misinformation) · `S1` significant inconvenience (procedures, addresses, hours, boundaries) · `S2` moderate (comparisons, general local info) · `S3` trivial (sports results) |
+| `ground_truth_source` | enum | `official` ground truth from an official/government/operator source · `human-reviewed` a human reviewed/annotated the expectation · `key` keyed to a specific verifiable record (decree/article/procedure) that still needs live verification · `derived` computed/calculated from other ground truth. **Never a model.** |
+
+Severity weights (runner v2): `S0×4, S1×2, S2×1, S3×0.5`.
 
 Rules applied: **never invent precise numbers/dates** — uncertain cases use
 `verify-later` and conservative `must_include` (e.g. "nêu mức phạt theo khung
@@ -102,6 +118,33 @@ same `must_include` / `must_not_include` verdicts as the main query.
   (vn-040/041 calculation, vn-042 conflicting gold quotes, vn-044 7-day sea
   forecast, vn-045/049 fabricated POI/hours, vn-046 rumor).
 
+## 4A. Reference-trace schema (R15-A gap scaffold)
+
+The scoreboard gap scaffold compares the newest `results/r15_corpus_*.json`
+run against reference traces under `results/reference/*.json`. A reference
+trace is a battery-compatible JSON file (same shape the runner emits), e.g.:
+
+```json
+{
+  "generated": "2026-10-07T00:00:00+00:00",
+  "kind": "reference-trace",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "xhigh",
+  "cases": [
+    {"id": "vn-001", "pass": true, "latency_s": 12.3},
+    {"id": "vn-002", "pass": false, "latency_s": 9.1}
+  ],
+  "totals": {"pass": 1, "fail": 1, "total": 2, "elapsed_s": 21.4}
+}
+```
+
+The scaffold computes `reference_pass_rate` (pass/total over the reference
+cases) and `gap_pp` = `(reference_pass_rate − current_pass_rate) × 100`
+(percentage points; positive = behind reference). When `results/reference/`
+is missing or empty the scaffold warns on stderr and the scoreboard still
+completes with exit 0 (no `gap` key is emitted). Reference traces are
+produced offline (no network, no spending) — see `analysis/r15-plan.md` §5.
+
 ## 5. Validation commands (expected outputs)
 
 ```bash
@@ -119,7 +162,7 @@ git status --short
 # expected: only evals/r9/ additions, i.e.
 #  ?? evals/r9/
 
-## 6. Runner (`run_corpus.py`, R10-C)
+## 6. Runner (`run_corpus.py`, R10-C/R15-A)
 
 Runs the corpus against the read-only gateway and emits battery-compatible
 artifacts under `results/` so `scripts/scoreboard.py` math applies.
@@ -138,11 +181,16 @@ python evals/r9/run_corpus.py --ids vn-001,vn-003 --sleep 1
 
 # offline check-logic validation (no HTTP)
 python evals/r9/run_corpus.py --dry-run --limit 3 --json
+
+# schema-v2 corpus (severity + variants)
+python evals/r9/run_corpus.py --dry-run --corpus evals/r9/corpus_v1.jsonl --limit 3
+python evals/r9/run_corpus.py --dry-run --corpus evals/r9/corpus_v1.jsonl --variants --limit 6
 ```
 
-Flags: `--split` (default `regression,challenge`), `--include-holdout`,
-`--ids`, `--limit`, `--variants`, `--sleep` (default 2.0, minimum 1.0),
-`--gateway` (default `http://127.0.0.1:8787`), `--out-dir` (default
+Flags: `--split` (default `regression,challenge`), `--corpus` (default
+`evals/r9/corpus_v0.jsonl`; use `corpus_v1.jsonl` for schema v2),
+`--include-holdout`, `--ids`, `--limit`, `--variants`, `--sleep` (default 2.0,
+minimum 1.0), `--gateway` (default `http://127.0.0.1:8787`), `--out-dir` (default
 `results/`), `--dry-run`, `--json` (prints the output JSON path).
 
 Splits (frozen, see `splits.json`): holdout = ids where `int(id[3:]) % 10 == 5`
@@ -156,7 +204,10 @@ notes,error}], totals{pass,fail,total,elapsed_s}}`; corpus cases use
 `kind: "corpus"` plus `signals` + `judge_pending`) and
 `results/r10_corpus_<ts>.md` (per-difficulty / per-domain tables, latency
 p50/p90 via `nearest_rank_percentile`, failure / judge-pending / stale
-lists).
+lists). R15-A also emits an identical `results/r15_corpus_<ts>.json/.md`
+alias (read by the scoreboard gap scaffold) with v2 `aggregates`:
+`{severity_weighted_pass_rate, p50_latency_s, p95_latency_s,
+variant_consistency_avg}` plus per-case `severity` + `variant_consistency`.
 
 Checks are signals, not scores: `citations_present`, `sources_section_present`,
 `source_domains`, `required_fields` heuristics (`answer`, `citations`,
