@@ -1,0 +1,30 @@
+TASK: R14-A — vn_geo boundaries layer (34-province polygons: fetch + ingest + locate + point-in-polygon)
+AGENT: Devin (hard)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, branch r14-a (YOU ARE HERE — `git branch --show-current` must print r14-a; this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r14-interfaces.md §0/§1 (FROZEN contract — implement EXACTLY), analysis/r14-plan.md §1–2, searchstore/store.py (find how existing modules write documents + the event API), vn_geo/places.py (document-write pattern to follow), vn_geo/admin_units.py (province names/codes for admin_code matching), vn_geo/overpass_poi.py (module/CLI conventions).
+
+SCOPE — write ONLY:
+- vn_geo/boundaries.py
+- tests/test_boundaries.py
+- tests/fixtures/r14a/ (tiny geojson fixtures you create)
+- agent_logs/r14a_result.json (self-report)
+
+HARD RULES:
+- stdlib only (json, urllib.request, sqlite3, math, argparse, re, hashlib). NO new deps, NO shapely.
+- Live network: exactly ONE fetch of the pinned SOURCE_URL (interfaces §1). Cache to data/boundaries/. Never re-fetch in tests.
+- NEVER write data/vn-geo.db — live acceptance uses data/r14-a-test.db (gitignored scratch).
+- GeoJSON coordinate order is [lon, lat]; support Polygon + MultiPolygon + holes; hole-aware even-odd ray casting; bbox prefilter.
+- `centroid` = representative point GUARANTEED inside the polygon (interfaces §1) — the 34/34 round-trip depends on it.
+- ruff format your files. Run tools via the MAIN venv: C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q (your worktree has no venv). Cwd = your worktree root.
+
+ACCEPTANCE:
+1. pytest: new tests pass + existing suite unbroken; ruff check . + ruff format --check . clean.
+2. Live: fetch → ingest(data/r14-a-test.db) → provinces == 34; locate: (21.0285,105.8542)→Hà Nội; (16.047,108.219)→Đà Nẵng; (20.844,106.688)→Hải Phòng; round-trip locate(centroid) → same code for ALL 34 provinces (34/34).
+3. Fixtures cover: square, square-with-hole (point-in-hole == False), multipolygon.
+4. sha256 recorded in meta; downloaded size ≈ 15,927,181 bytes (±1%).
+
+VERIFY (orchestrator runs): pytest suite; ruff; live re-run of fetch+ingest+locate round-trip on a FRESH scratch db; grep stdlib-only imports; confirm no data/vn-geo.db write.
+CONSTRAINTS: no installs; no commits; don't touch other tasks' files (coverage.py/resolve.py/providers.py/refresh.py/business.py/connectors_*); politeness: one fetch only.
+
+SELF-REPORT: agent_logs/r14a_result.json {task, files_created, tests_summary, acceptance_selfcheck, notes}

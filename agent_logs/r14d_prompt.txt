@@ -1,0 +1,32 @@
+TASK: R14-D — PlaceProvider interface + refresh `places` step + run manifest
+AGENT: Cline (medium)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, branch r14-d (YOU ARE HERE — `git branch --show-current` must print r14-d; this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r14-interfaces.md §0/§4 (FROZEN contract — implement EXACTLY), analysis/r14-plan.md §1–2, vn_geo/refresh.py (FULL — you are extending it), vn_geo/places.py (save_places signature), vn_geo/connectors_gosom.py (adapter to reuse — read-only), searchstore/store.py (event API).
+
+SCOPE — write ONLY:
+- vn_geo/providers.py
+- vn_geo/refresh.py (ADDITIVE changes only — no renames/removals of existing keys/behavior)
+- tests/test_providers.py
+- tests/test_refresh_places.py
+- tests/fixtures/r14d/ (stub JSONL + fixtures)
+- agent_logs/r14d_result.json (self-report)
+
+HARD RULES:
+- STOP exploring — WRITE the deliverable now; refine after. First artifact write within 15 min.
+- stdlib only; ZERO network (provider is offline JSONL; tests use stubs/fixtures).
+- refresh.py: `SOURCES` gains "places"; `_plan_steps`/`_run_step` handle areas with cfg `places: {provider, path}`; run-event payload gains ADDITIVE key `"places": {provider, records_raw, records_new, records_updated, records_unchanged, errors:[]}`; `coverage()` gains ADDITIVE keys `places_gap` + `places_stale` (threshold `places_max_age_days` default 90, read from config); `_validate_config` accepts the places block (additive). Read the current code FIRST and follow its patterns.
+- Do NOT edit analysis/refresh-areas.json (read-only — schema documented only).
+- NEVER write data/vn-geo.db; scratch = data/r14-d-test.db or tmp_path.
+- ruff format your files. Run tools via C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q with cwd = your worktree root.
+
+ACCEPTANCE:
+1. pytest: new tests pass + existing suite unbroken; ruff check . + ruff format --check . clean.
+2. Stub provider end-to-end into a scratch db: manifest counts correct (raw/new/updated/unchanged) + event persisted (query it back).
+3. `coverage()` returns places_gap + places_stale keys (test with fixture data).
+4. Zero network in tests; existing refresh tests untouched and green.
+
+VERIFY (orchestrator runs): pytest; ruff; stub e2e re-run into fresh scratch db; manifest event read-back; grep no-network; diff review of refresh.py (additive-only check).
+CONSTRAINTS: no installs; no commits; don't touch other tasks' files (boundaries.py, coverage.py, resolve.py, places.py, business.py, connectors_*, admin_units.py).
+
+SELF-REPORT: agent_logs/r14d_result.json {task, files_created, tests_summary, acceptance_selfcheck, notes}

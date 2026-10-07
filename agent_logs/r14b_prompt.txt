@@ -1,0 +1,30 @@
+TASK: R14-B — vn_geo coverage planner (deterministic polygon-clipped grid → crawl jobs)
+AGENT: Cline (medium)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, branch r14-b (YOU ARE HERE — `git branch --show-current` must print r14-b; this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r14-interfaces.md §0/§2 (FROZEN contract — implement EXACTLY), analysis/r14-plan.md §1–2, vn_geo/overpass_poi.py + vn_geo/refresh.py (module/CLI conventions), searchstore/store.py (how to open/read docs).
+
+SCOPE — write ONLY:
+- vn_geo/coverage.py
+- tests/test_coverage.py
+- tests/fixtures/r14b/ (your fixtures)
+- agent_logs/r14b_result.json (self-report)
+
+HARD RULES:
+- STOP exploring — WRITE the deliverable now; refine after. First artifact write within 15 min.
+- stdlib only. NO network anywhere (tests + module): the planner consumes geometry from the boundaries API; in tests use fixtures + a fake loader with the SAME signatures as boundaries.load_geometry / point_in_geometry / province_bbox.
+- Grid math is FROZEN (interfaces §2): origin = bbox min rounded to 3 decimals; dlat = cell_km/111.32; dlon = cell_km/(111.32*cos(radians(bbox-center lat))); cell_id = f"{area_code}:{ix}_{iy}"; keep cell iff CENTER is inside polygon; sort (iy, ix). Same inputs → byte-identical output.
+- NEVER write data/vn-geo.db; scratch = data/r14-b-test.db or tmp_path.
+- ruff format your files. Run tools via C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q with cwd = your worktree root (worktree has no venv).
+
+ACCEPTANCE:
+1. pytest: new tests pass + existing suite unbroken; ruff check . + ruff format --check . clean.
+2. Determinism: two runs on same input → identical cells list (test).
+3. All kept cell centers inside the polygon (re-verify sample via the point-in-polygon function).
+4. plan(db, "<one real province code from boundaries, e.g. hai-phong>", cell_km=2.0) — report cells_total + area_km2 + implied density in result.json. (If the boundaries layer isn't merged in your worktree yet, exercise via your fixture geometry + note it.)
+5. expand → JSONL with unique job_id (f"{cell_id}|{cat}").
+
+VERIFY (orchestrator runs): pytest; ruff; determinism re-run; cell-center spot-check vs boundaries.point_in_geometry; grep no-network.
+CONSTRAINTS: no installs; no commits; don't touch other tasks' files (boundaries.py is read-only reference — import signatures only, do not edit it; resolve/providers/refresh/business/connectors untouched).
+
+SELF-REPORT: agent_logs/r14b_result.json {task, files_created, tests_summary, acceptance_selfcheck, notes}

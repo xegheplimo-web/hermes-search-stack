@@ -1,0 +1,31 @@
+TASK: R14-C — stable place identity fix + vn_geo resolve.py (non-destructive cross-source entity resolution)
+AGENT: Devin (hard)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, branch r14-c (YOU ARE HERE — `git branch --show-current` must print r14-c; this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): analysis/r14-interfaces.md §0/§3 (FROZEN contract — implement EXACTLY), analysis/r14-plan.md §0.1–0.2, vn_geo/places.py (full), searchstore/store.py (documents + entity_id_for + record_event L~310), vn_geo/business.py (entity schema — read-only; frozen for this round).
+
+SCOPE — write ONLY:
+- vn_geo/resolve.py
+- vn_geo/places.py (MINIMAL edit: `_record_url` L~148 only + its docstring)
+- tests/test_resolve.py
+- tests/test_places_identity.py
+- agent_logs/r14c_result.json (self-report)
+
+HARD RULES:
+- places.py edit must be surgical: source_id truthy → url_key `f"vn://{slug(src)}/{slug(source_id)}"` (fold_d-based slug); NO source_id → preserve CURRENT behavior EXACTLY. Do not touch any other function in places.py.
+- resolve.py: NON-DESTRUCTIVE v1 — emit `entity_aliased` events via the store's event API (confirm exact method name in store.py first); never rewrite/delete entity documents. dry_run=True writes NOTHING.
+- Matching priority (frozen): (a) tax_code exact (digits-only) → (b) fold_d(name) exact + province/ward hint → (c) token-Jaccard ≥ 0.80 AND (address overlap ≥ 0.5 OR haversine ≤ 200 m). canonical = oldest fetched_at, tie → lexicographic entity_id. Blocking strategy documented (tax_code bucket → first-token bucket).
+- Idempotent: skip pairs already aliased any direction; second run aliases_new == 0.
+- stdlib only (math for haversine). No network. NEVER write data/vn-geo.db (scratch: cp to data/r14-c-test.db for any live-ish run).
+- ruff format your files. Run tools via C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q with cwd = your worktree root.
+
+ACCEPTANCE:
+1. pytest: new tests pass + existing suite unbroken; ruff check . + ruff format --check . clean.
+2. Identity: same source_id + different extra.url → same url_key; record without source_id → unchanged url_key (both tested).
+3. Resolver: synthetic fixture (~6 entities, 2 sources, incl. 1 tax_code match, 1 fuzzy name+geo match, 1 clear non-match) → expected groups; second run → aliases_new == 0; dry_run writes nothing.
+4. Report groups include canonical + members + method + score.
+
+VERIFY (orchestrator runs): pytest; ruff; cp data/vn-geo.db → scratch; resolve run ×2 (2nd → 0 new); spot-check events in scratch db; identity tests re-run.
+CONSTRAINTS: no installs; no commits; don't touch business.py (frozen), connectors_*, coverage.py, providers.py, refresh.py.
+
+SELF-REPORT: agent_logs/r14c_result.json {task, files_created, tests_summary, acceptance_selfcheck, notes}
