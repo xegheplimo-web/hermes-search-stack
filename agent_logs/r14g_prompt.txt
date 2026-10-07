@@ -1,0 +1,29 @@
+TASK: R14-G — hermeticize goong tests + usage-path override (fix machine-global limiter coupling)
+AGENT: OpenCode (light)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, branch r14-g (YOU ARE HERE — `git branch --show-current` must print r14-g; this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+PROBLEM (verified by orchestrator): tests/test_vn_geo_goong.py (28 tests) fails whenever the machine-global limiter file `%LOCALAPPDATA%/hermes/vn-geo/goong_usage.json` reads {"count":1000} for today — GoongClient's DailyLimiter uses that default path, so unit tests are NOT hermetic. Reproduced identically on clean main.
+Read first (read-only): vn_geo/goong.py (FULL), tests/test_vn_geo_goong.py (FULL), other tests for fixture conventions.
+
+SCOPE — write ONLY:
+- vn_geo/goong.py (MINIMAL edit: state-path resolution honors env var `HERMES_VN_GEO_GOONG_USAGE` (full path to the usage json), resolved LAZILY at each limiter read/write — NOT at import — so tests can monkeypatch it. Default behavior EXACTLY unchanged when unset.)
+- tests/test_vn_geo_goong.py (use a tmp state path — env monkeypatch or explicit path in fixtures)
+- tests/conftest.py (create ONLY if needed — keep tiny; an autouse session fixture pointing HERMES_VN_GEO_GOONG_USAGE at a tmp file is acceptable)
+- agent_logs/r14g_result.json (self-report)
+
+HARD RULES:
+- Do NOT change GoongClient network behavior, endpoints, politeness pacing, or the cap value (1000/day). Only state-file PATH resolution + tests.
+- Tests must pass on THIS machine EVEN with the real %LOCALAPPDATA% file at cap=1000 (i.e., tests must never touch the real file).
+- stdlib only; no network in tests; ruff format; run via C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q with cwd = your worktree root.
+- NEVER write data/vn-geo.db; don't touch other modules.
+
+ACCEPTANCE:
+1. `python -m pytest tests/test_vn_geo_goong.py -q` → ALL PASS on this machine (real file at cap).
+2. Plain full-suite run passes WITHOUT any fresh-LOCALAPPDATA workaround (exit 0).
+3. A test proves default-path behavior when the env var is unset (monkeypatch os.environ).
+4. ruff check + format --check clean.
+
+VERIFY (orchestrator runs): plain full suite exit 0 (no env trick), targeted goong tests, ruff; minimal-diff review of goong.py.
+CONSTRAINTS: no installs; no commits; freeze list: everything else (README.md, scripts/*, business.py, connectors_*, refresh.py, admin_units.py, searchstore/*, .orchestrator/*).
+
+SELF-REPORT: agent_logs/r14g_result.json {task, files_created, tests_summary, acceptance_selfcheck, notes}

@@ -1,0 +1,25 @@
+TASK: R14-F — user guide for the R14 layers (boundaries / coverage / resolve / providers / refresh places)
+AGENT: OpenCode (light)
+
+CONTEXT: repo C:/Users/atton/hermes-search-stack, branch r14-f (YOU ARE HERE — `git branch --show-current` must print r14-f; this dir IS your worktree; write ONLY in it). Orchestrator owns ALL git operations — NEVER commit/push.
+Read first (read-only): vn_geo/boundaries.py, vn_geo/coverage.py, vn_geo/resolve.py, vn_geo/providers.py, vn_geo/refresh.py (CLI sections), analysis/r14-plan.md, analysis/r14-interfaces.md, analysis/r13-user-guide.md (FORMAT to mirror).
+
+SCOPE — write ONLY:
+- analysis/r14-user-guide.md
+- agent_logs/r14f_result.json (self-report)
+
+CONTENT (concise, mirror analysis/r13-user-guide.md tone/format; Vietnamese is fine):
+1. Quick start workflow: boundaries fetch+ingest → coverage plan a province → expand jobs (JSONL) → provider run (offline gosom-jsonl) → resolve aliases → refresh coverage (gap/stale).
+2. Per-module CLI reference with REAL flag names — read the code; every command must be copy-pasteable (verify each with `--help`).
+3. Worked example: hai-phong plan at 2 km (769 cells), expand with 2 categories, `places` config snippet, `refresh run --sources places` output sample.
+4. Notes: polygon=truth / bbox=envelope; adaptive cell sizing guidance (0.5–1 km dense urban → 2–5 km rural); alias events are non-destructive (canonical chosen at query time); `places_max_age_days` default 90.
+5. Do NOT edit README.md or any other file.
+
+OFFLINE REPRODUCTION: the orchestrator PRE-STAGED the boundary cache at `data/boundaries/` in your worktree — use it directly. **DO NOT read or copy ANY path outside your worktree** (opencode auto-rejects external-directory access in non-interactive runs — a previous attempt died exactly there). If the cache were missing: run `python -m vn_geo.boundaries fetch` (ONE fetch of the pinned source — allowed). Then: `python -m vn_geo.boundaries ingest --db data/r14-f-test.db`, `python -m vn_geo.coverage plan --db data/r14-f-test.db --area hai-phong --cell-km 2.0 --out data/r14-f-plan.json`, etc. For resolve: document the CLI (`run`/`report`, flags, event semantics) — no live run needed. Run tools via C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe with cwd = your worktree root.
+
+ACCEPTANCE:
+1. analysis/r14-user-guide.md exists with all 5 sections; no other file touched.
+2. Every CLI command in the guide was exercised (--help at minimum; run where the offline repro allows) — list the executed commands in result.json.
+3. Worked example numbers match the code's real output (769 cells for hai-phong @ 2 km).
+
+SELF-REPORT: agent_logs/r14f_result.json {task, files_created, commands_checked, notes}

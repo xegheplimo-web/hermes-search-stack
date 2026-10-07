@@ -28,7 +28,7 @@ Key results (see `REPORT.md` for full evidence):
 
 Details: `SPEC.md` (spec + change log), `REPORT.md` (orchestrator report + evidence).
 
-## VN geo/business data kit (`vn_geo`, rounds 4–5)
+## VN geo/business data kit (`vn_geo`, rounds 4–14)
 
 Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI per module):
 
@@ -41,12 +41,16 @@ Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI pe
 | `refresh` | the other modules (no new source) | coverage report (what's missing per area/source) + auto-backfill `run` with content-addressed dedup — re-running unchanged data adds **0 rows**; weekly cron: `scripts/refresh_cron.py` + `analysis/refresh-areas.json` |
 | `goong` | Goong REST v2 (VN Google-Maps alternative) | autocomplete / geocode / reverse / place detail with a hard local **1,000 req/day cap** (free tier); key via `GOONG_API_KEY` or `<LOCALAPPDATA>/hermes/vn-geo/keys.env` (never in repo) — account activation pending |
 | `business` | masothue / CKAN-ext / gosom JSONL | business-entity pipeline (round 13): normalize → geocode (Goong → Nominatim) → dedupe-upsert; FTS query with freshness flags; diff events; `seed` / `classify-rev` CLI |
+| `boundaries` | pinned GISData GeoJSON (post-2025, 34 provinces) | province polygons → bbox / centroid / point-in-polygon locate; admin identity vs spatial authority split (round 14) |
+| `coverage` | `boundaries` + area config (no new source) | adaptive spatial coverage planner: polygon-truth cells, density tiers, deterministic + resumable cell ids → scanner job lists (round 14) |
+| `resolve` | stored entities (no new source) | cross-source entity resolution v1: non-destructive alias events with conservative guards (round 14) |
+| `providers` | external scanners (e.g. gosom JSONL) | `PlaceProvider` interface + refresh `places` step with run manifests — pure core, hermetic tests (round 14) |
 
 Source playbook and per-source verification notes: `analysis/vn-geodata-playbook.md`,
 `analysis/vn-business-data-sources.md`. Run: `python -m vn_geo.<module> --help`.
 
 Business layer CLI (round 13): `python -m vn_geo business seed|query|diff|classify-rev`
-— see `analysis/r13-user-guide.md`.
+— see `analysis/r13-user-guide.md`. Spatial layers (round 14): `analysis/r14-user-guide.md`.
 
 ## Universal gateway (`gateway`, round 8)
 
@@ -88,7 +92,7 @@ VN news ring (round 8): `python -m vn_news fetch --out news.jsonl` →
 | `searchstore/` | SQLite (FTS5 + vector tier) document store — content-addressed versioning, events, diff (round 3) |
 | `gateway/` | Universal gateway — OpenAI-compatible HTTP + MCP, one model `hermes-search` (round 8) |
 | `vn_news.py` | VN news RSS ring — fetch / ingest / query CLI over the store (round 8) |
-| `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill refresh, Goong client (rounds 4–5) |
+| `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill refresh, Goong client; boundaries / adaptive coverage / entity resolve / place providers (rounds 4–14) |
 | `scripts/` | Ops scripts — weekly vn-geo refresh cron runner |
 | `fact_check.py` | Citation fact-check battery, schema `fact_check.v1` (round 2) |
 | `trust.py` | Source trust scoring, `trust_report.v1` + host overrides (round 6) |
@@ -168,6 +172,7 @@ Hard rules:
 - Round 11 — vLLM-informed service-quality upgrade proposals (analysis-only 4-agent wave; see `analysis/r11-proposals.md`).
 - Round 12 — completion plan: gateway P0 reliability bundle + QA optimization loop (docs only; see `analysis/r12-plan.md`).
 - Round 13 — VN business data layer: `vn_geo` business pipeline (normalize / geocode / dedupe-upsert / FTS query / diff) + masothue · CKAN-ext · gosom connectors + `business seed|query|diff|classify-rev` CLI; live seed verified (see `analysis/r13-verification.md`).
+- Round 14 — spatial foundation: `vn_geo` boundaries (34 provinces, pinned source) + adaptive `coverage` planner + stable place identity & cross-source `resolve` + `PlaceProvider`/refresh `places` step; hermetic goong limiter tests; R14 user guide (see `agent_logs/r14_verification.md`, `analysis/r14-user-guide.md`).
 
 ## License
 

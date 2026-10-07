@@ -1,0 +1,39 @@
+R14-E — Geocode attempt-tracking + retry window (seed re-run speed fix)
+
+Repo: hermes-search-stack. Your worktree root = cwd (E:/aoe-native-agent-worktrees/r14-e, branch r14-e).
+Python: C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe
+
+CONTEXT
+- vn_geo/business.py seed_from_config(): EVERY re-run re-geocodes EVERY coordinate-less record (line ~428): ckan_hp 1,261 + masothue 75 ≈ 1,336 records × (latency + 1.5 s politeness) ≈ 50 min per re-run → seed re-runs hit wrapper timeouts.
+- geocode() chain: Goong (key pending) → Nominatim → status "approximate" + null coords. Registry hit-rate is low → most records fall to approximate and get retried forever.
+- Today's idempotency: repeated failed attempts produce identical entities → NO version churn (only slow). Your change must keep skip-runs at ZERO version churn.
+
+TASK (vn_geo/business.py ONLY + new test file)
+1) Attempt-tracking + retry window:
+   - New OPTIONAL config key `business_geocode_retry_days` (number, default 7), read from the area config next to `business_geocode_missing`.
+   - In seed_from_config(): when geocode_missing is true and a record lacks coords → attempt ONLY IF no attempt marker exists or the marker is older than retry_days; else skip (no geocode call, NO politeness sleep).
+   - After each FAILED attempt (result → approximate, no coords) write a marker: ISO-8601 UTC timestamp.
+   - Marker storage — prefer ZERO version churn: use the store's `kv` table as `geocode_attempted:<entity_id>` → ISO ts. searchstore/store.py already uses kv for the diff watermark (INSERT OR REPLACE INTO kv(key,value)); entity ids come from `store.entity_id_for(...)` (check its exact signature). If you instead put a meta field on the entity, you MUST prove skip-runs add zero document versions, and document the churn tradeoff (one "updated" version per record per retry cycle).
+   - Successful geocodes set coords → the existing lat/lng guard skips them on later runs; no marker needed (document this).
+2) Seed summary: ADD keys only — per-area and totals: `geocoded` (attempts made this run), `geocode_skipped_recent` (skips due to window). Do not rename/remove existing keys.
+3) Keep `business_geocode_missing:false` = no attempts at all; keep the 1.5 s sleep AFTER real attempts only (the skip path must not sleep).
+
+TESTS — new tests/test_business_geocode_policy.py, hermetic (no network):
+- monkeypatch business._goong_geocode / business._nominatim_geocode with call counters; monkeypatch business.time.sleep (record, never actually sleep).
+- run1 on a tmp db: N attempts, markers written, summary geocoded=N.
+- run2 same db immediately: attempts=0, geocode_skipped_recent=N, ZERO new versions (assert via store), summary correct.
+- window elapsed (retry_days=0 or age the markers): attempts again.
+- business_geocode_missing=false → 0 attempts, no markers.
+- retry_days default = 7 when key absent.
+- full suite still passes.
+
+ACCEPTANCE (orchestrator re-runs these — make them true):
+- `.venv python -m pytest -q` exit 0; `ruff check .` + `ruff format --check .` clean.
+- LIVE DEMO (required; scratch db data/r14-e-test.db — NEVER data/vn-geo.db, it is live/read-only for you): write a mini config data/r14-e-cfg.json = {"business_enabled": true, "areas": [ <the Yên Dũng entry copied verbatim from analysis/refresh-areas.json> ]} (25 masothue records — small). Run: `python -m vn_geo business seed --config data/r14-e-cfg.json --db data/r14-e-test.db --json` TWICE. Run1 must show geocoded >= 1 (verify >=1 record lacks coords; if this area's records all carry coords, switch to a small ckan area and note it). Run2 must show geocoded = 0, geocode_skipped_recent >= 1, wall time < 20 s. Paste both JSON outputs into result.json.
+- result.json: design choice (kv vs meta + why), config keys, counters, test list, both demo outputs.
+
+RULES
+- Scope: vn_geo/business.py + tests/test_business_geocode_policy.py ONLY. Do NOT touch store.py, __main__.py, refresh_cron.py, README, or configs in analysis/. No new deps (stdlib only).
+- NEVER write data/vn-geo.db. NEVER git commit/push/branch/stash — the orchestrator owns git.
+- Hermetic pytest: no network in tests. The live demo (seed CLI) may use network for fetch + a few geocode calls — allowed.
+- Stay INSIDE your worktree (no reads/copies outside it). Run tools via the venv python above with cwd = worktree root.
