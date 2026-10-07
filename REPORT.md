@@ -4,6 +4,29 @@
 
 ---
 
+## 0. Hiện trạng canonical — cập nhật 2026-10-07 (R16)
+
+> Các mục §1–§9 bên dưới là bản Round-1 (2026-10-06) — giữ nguyên làm lịch sử, **đúng tại thời điểm viết**.
+> Mục §0 này là nguồn trạng thái hiện tại; các hard rules ở §5 vẫn hiệu lực nguyên vẹn.
+
+| Hạng mục | Trạng thái 2026-10-07 | Bằng chứng |
+|---|---|---|
+| Search/extract layers (§1, §5) | Không đổi — managed Perplexity auto + keyless ring (exa/parallel/keenable); hard rules F1/F2/F3 vẫn đúng | §1–§5; probe sau update §9 |
+| `searchstore` | 1,285 docs / 1,287 events; + answer cache, trust, depth policy (R6) | `analysis/r6-interfaces.md`, `r7-interfaces.md` |
+| `vn_geo` | rounds 4–14: admin units, POI, places, enterprises, refresh, Goong client (key chưa cấp), business pipeline, boundaries/coverage/resolve/providers | `analysis/r13-verification.md`, `r14-user-guide.md` |
+| `gateway` | :8787 live — 1 model `hermes-search`, OpenAI HTTP + MCP **7 tools** (thêm `hermes_places` từ R16) | `analysis/round8-verification.md`, `r16-interfaces.md` |
+| Hermes api_server | :8642 live (auth enforced; key đã set 2026-10-07); sessions/runs/transcripts API | live probes W4 (`agent_logs/r16_verification_wave4.md`) |
+| `web/` (R16) | Next.js 16 + assistant-ui chat; rich tool events; PlacesToolUI + MapLibre; flavors `gateway`/`hermes_api` | `web/README.md`; W2–W4 ledgers `agent_logs/r16_verification_wave*.md` |
+| R16 W1–W3 | DONE: `hermes_places` tool + enrichment; pilot `data/places.db` 8 rows + MCP smoke; web shell; renderers + demo | `analysis/r16-plan.md` (status), ledgers |
+| R16 W4 | DONE: P0 `entity_upsert` meta-drop fix (`c62db07`) + web `hermes_api` flavor live-verified vs :8642 (`60ef8ca`) | `agent_logs/r16_verification_wave4.md` |
+| R-AUDIT | Audit 3-wave (A core / B config-ops / C inventory-web) + codemap cross-check; findings đã ledger hóa | `analysis/audit-full-2026-10-07.md`, `codemap2-crosscheck-2026-10-07.md` |
+| Tests | `pytest` **1279 passed, 1 skipped**; ruff 0/0; web build 0; CI + Security xanh | CI runs on `c62db07`/`60ef8ca` |
+| R15 | Answer-quality program — Round-0 plan (docs-only): D reliability → A benchmark → C local-first → B1/B2 xhigh/ultra | `analysis/r15-plan.md` |
+
+**Next (đề xuất):** R17 = R15 execution order (D→A), Goong key khi Sếp cấp, mở rộng places pilot ngoài Yên Dũng.
+
+---
+
 ## 1. TL;DR — Kiến trúc cuối (đã kiểm chứng)
 
 | Lớp | Cơ chế | Backend thực tế | Bằng chứng |

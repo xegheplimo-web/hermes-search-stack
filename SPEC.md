@@ -1,5 +1,7 @@
 # Project: Hermes Search Stack — "Search như Perplexity.ai"
 
+> **ℹ️ STATUS: FROZEN — Round 1–8 (2026-10-06).** Tài liệu này là spec gốc, giữ nguyên cho lịch sử; KHÔNG còn là nguồn trạng thái. Hiện trạng: `REPORT.md` §0 (2026-10-07) + `analysis/` (r9–r16).
+
 **Orchestrator:** Hermes (Lead) · **Date:** 2026-10-06
 **Goal:** Đảm bảo `web_search` + `web_extract` của Hermes đạt chất lượng "như Perplexity.ai" — đã cấu hình, đã kiểm chứng, có fallback, có bằng chứng.
 

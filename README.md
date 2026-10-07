@@ -74,7 +74,7 @@ curl -s http://127.0.0.1:8787/v1/chat/completions -H "Content-Type: application/
 Config is `HERMES_GATEWAY_*` env vars (see `.env.gateway.example`); the
 synthesis LLM is config-driven (default `opencode-go` `deepseek-flash`; the
 client adds the relay's `x-opencode-session` header automatically). MCP
-streamable HTTP is served at `POST /mcp` (6 tools). Live acceptance
+streamable HTTP is served at `POST /mcp` (7 tools since R16 — incl. `hermes_places`). Live acceptance
 2026-10-06: cited answers in ~10s, SSE deltas + `[DONE]`, MCP 6/6 tools —
 `analysis/round8-verification.md`, `evidence/r8/`.
 
@@ -91,6 +91,7 @@ VN news ring (round 8): `python -m vn_news fetch --out news.jsonl` →
 | `tests/` | Offline unit tests (run in CI) |
 | `searchstore/` | SQLite (FTS5 + vector tier) document store — content-addressed versioning, events, diff (round 3) |
 | `gateway/` | Universal gateway — OpenAI-compatible HTTP + MCP, one model `hermes-search` (round 8) |
+| `web/` | R16 web UI — Next.js 16 + assistant-ui chat over the gateway; rich tool renderers (PlacesToolUI + MapLibre); backend flavors `gateway` / `hermes_api` (see `web/README.md`) |
 | `vn_news.py` | VN news RSS ring — fetch / ingest / query CLI over the store (round 8) |
 | `vn_geo/` | Vietnam geo/business data kit — admin units, OSM POI, places scan/diff, CKAN enterprises, auto-backfill refresh, Goong client; boundaries / adaptive coverage / entity resolve / place providers (rounds 4–14) |
 | `scripts/` | Ops scripts — weekly vn-geo refresh cron runner |
@@ -173,6 +174,8 @@ Hard rules:
 - Round 12 — completion plan: gateway P0 reliability bundle + QA optimization loop (docs only; see `analysis/r12-plan.md`).
 - Round 13 — VN business data layer: `vn_geo` business pipeline (normalize / geocode / dedupe-upsert / FTS query / diff) + masothue · CKAN-ext · gosom connectors + `business seed|query|diff|classify-rev` CLI; live seed verified (see `analysis/r13-verification.md`).
 - Round 14 — spatial foundation: `vn_geo` boundaries (34 provinces, pinned source) + adaptive `coverage` planner + stable place identity & cross-source `resolve` + `PlaceProvider`/refresh `places` step; hermetic goong limiter tests; R14 user guide (see `agent_logs/r14_verification.md`, `analysis/r14-user-guide.md`).
+- Round 15 — answer-quality program: closing the frontier gap (Round-0 plan, docs-only — reliability → benchmark → local-first → xhigh/ultra; see `analysis/r15-plan.md`).
+- Round 16 — Hermes Web UI + places: `hermes_places` MCP tool (7th) + `query_places` enrichment + pilot `data/places.db`; `web/` (Next.js 16 + assistant-ui) chat with rich tool events, PlacesToolUI + MapLibre; W4 hardening: web → Hermes api_server `:8642` flavor (`hermes_api`, live-verified) + P0 `entity_upsert` meta-drop fix. Full suite 1,279 (see `analysis/r16-plan.md`, `web/README.md`, `agent_logs/r16_verification_wave4.md`).
 
 ## License
 
