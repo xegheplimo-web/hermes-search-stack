@@ -1,7 +1,6 @@
 # R17 (candidate) — Multi-source providers: Exa/Parallel + keyless social
 
-**Status: scoped candidate — NOT scheduled.** Order: after R15-B2 (worker pool); independent
-of R16 (Web UI). Owner decided at round-pack time.
+**Status: SCHEDULED — R17 kickoff 2026-10-08** (R15-B2 ✓, R16 ✓). Round control: `analysis/r17-plan.md`; frozen interfaces: `analysis/r17-interfaces.md`; value ledger: `analysis/r17-codemap-ledger.md`.
 
 ## 1. Current state (verified 2026-10-07 @ `926ab6b`)
 

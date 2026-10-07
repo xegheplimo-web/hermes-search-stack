@@ -1,0 +1,792 @@
+# R17 Round 0 RECON — graph @ cee297d (refreshed 2026-10-08 06:44:23)
+
+== search --help ==
+usage: code-review-graph search [-h] [--kind {File,Class,Function,Type,Test}]
+                                [--limit LIMIT] [--repo REPO]
+                                query
+
+positional arguments:
+  query                 Search string
+
+options:
+  -h, --help            show this help message and exit
+  --kind {File,Class,Function,Type,Test}
+  --limit LIMIT
+  --repo REPO           Repository root (auto-detected)
+
+== architecture (top) ==
+{
+  "status": "ok",
+  "summary": "Architecture: 69 communities, 89 community pairs, 24 warning(s)",
+  "communities": [
+    {
+      "id": 3,
+      "name": "core-extract",
+      "size": 503,
+      "cohesion": 0.4155,
+      "dominant_language": "python"
+    },
+    {
+      "id": 26,
+      "name": "vn-geo-cmd",
+      "size": 470,
+      "cohesion": 0.3732,
+      "dominant_language": "python"
+    },
+    {
+      "id": 6,
+      "name": "vn-geo-cmd-ingest",
+      "size": 426,
+      "cohesion": 0.3877,
+      "dominant_language": "python"
+    },
+    {
+      "id": 8,
+      "name": "vn-geo-entity",
+      "size": 200,
+      "cohesion": 0.4505,
+      "dominant_language": "python"
+    },
+    {
+      "id": 40,
+      "name": "public-data",
+      "size": 200,
+      "cohesion": 0.4056372549019608,
+      "dominant_language": "javascript"
+    },
+    {
+      "id": 42,
+      "name": "public-tile",
+      "size": 158,
+      "cohesion": 0.35322777101096225,
+      "dominant_language": "javascript"
+    },
+    {
+      "id": 43,
+      "name": "public-global",
+      "size": 145,
+      "cohesion": 0.218249075215783,
+      "dominant_language": "javascript"
+    },
+    {
+      "id": 61,
+
+== flows top-12 criticality ==
+{
+  "status": "ok",
+  "summary": "Found 355 execution flow(s), showing 12 of 355",
+  "flows": [
+    {
+      "id": 1,
+      "name": "Page",
+      "entry_point_id": 5216,
+      "depth": 4,
+      "node_count": 18,
+      "file_count": 9,
+      "criticality": 0.69,
+      "path": [
+        5216,
+        5246,
+        5320,
+        5248,
+        5251,
+        5317,
+        5315,
+        5318,
+        5321,
+        5316,
+        5244,
+        5278,
+        5252,
+        5253,
+        5265,
+        5327,
+        5243,
+        5242
+      ],
+      "created_at": "2026-10-07 20:19:27",
+      "updated_at": "2026-10-07 20:19:27"
+    },
+    {
+      "id": 2,
+      "name": "AssistantMessage",
+      "entry_point_id": 5241,
+      "depth": 4,
+      "node_count": 11,
+      "file_count": 5,
+      "criticality": 0.69,
+      "path": [
+        5241,
+
+== search: provider ==
+{
+  "status": "ok",
+  "query": "provider",
+  "search_mode": "fts",
+  "summary": "Found 12 node(s) matching 'provider'",
+  "results": [
+    {
+      "name": "test_gosom_provider_satisfies_protocol",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/tests/test_providers.py::test_gosom_provider_satisfies_protocol",
+      "kind": "Test",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_providers.py",
+      "line_start": 43,
+      "line_end": 45,
+      "language": "python",
+      "params": "()",
+      "return_type": null,
+      "signature": "def test_gosom_provider_satisfies_protocol(())",
+      "score": 0.032787
+    },
+    {
+      "name": "test_get_provider_known_and_unknown",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/tests/test_providers.py::test_get_provider_known_and_unknown",
+      "kind": "Test",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_providers.py",
+      "line_start": 48,
+      "line_end": 54,
+      "language": "python",
+      "params": "()",
+      "return_type": null,
+      "signature": "def test_get_provider_known_and_unknown(())",
+
+== search: source ==
+{
+  "status": "ok",
+  "query": "source",
+  "search_mode": "fts",
+  "summary": "Found 12 node(s) matching 'source'",
+  "results": [
+    {
+      "name": "SourceLink",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/web/src/lib/sources.ts::SourceLink",
+      "kind": "Class",
+      "file_path": "C:/Users/atton/hermes-search-stack/web/src/lib/sources.ts",
+      "line_start": 13,
+      "line_end": 13,
+      "language": "typescript",
+      "params": null,
+      "return_type": null,
+      "signature": "class SourceLink",
+      "score": 0.032787
+    },
+    {
+      "name": "test_source_id_scoped_per_source",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/tests/test_places_identity.py::test_source_id_scoped_per_source",
+      "kind": "Test",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_places_identity.py",
+      "line_start": 74,
+      "line_end": 78,
+      "language": "python",
+      "params": "(store)",
+      "return_type": null,
+      "signatu
+== [2] 2026-10-08 06:45:25 gateway dirs ==
+gateway/bridge/:
+__init__.py
+__pycache__
+worker.py
+
+gateway/core/:
+__init__.py
+__pycache__
+cache.py
+claims.py
+engine.py
+local_context.py
+planner.py
+pool.py
+router.py
+synthesis.py
+ultra.py
+
+gateway/mcp/:
+__init__.py
+__pycache__
+server.py
+tools.py
+
+== search terms ==
+-- fanout
+      "name": "build_fanout",
+      "file_path": "C:/Users/atton/hermes-search-stack/deep_research.py",
+      "name": "test_cli_plan_and_fanout",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_deep_research.py",
+      "name": "test_fanout_output_shape_and_budget_notes",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_deep_research.py",
+-- worker
+      "name": "worker",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_answer_cache.py",
+      "name": "worker",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/core/pool.py",
+      "name": "slow_worker",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_search_prefetch.py",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/bridge/worker.py",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/bridge/worker.py",
+      "name": "test_worker_unsafe_url",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_search_prefetch.py",
+-- pool
+      "name": "PoolStubBackend",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_ultra_pipeline.py",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/core/pool.py",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/core/pool.py",
+      "name": "C:/Users/atton/hermes-search-stack/tests/gateway/test_pool.py",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_pool.py",
+      "name": "_get_ultra_pool",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/core/engine.py",
+      "name": "test_pool_factory_failure_falls_back_to_serial",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_ultra_pipeline.py",
+-- trust
+      "name": "test_vn_parity_trust_fact_check",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_trust.py",
+      "name": "test_cli_explain_malformed_trust_exit_2",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_trust.py",
+      "name": "C:/Users/atton/hermes-search-stack/trust.py",
+      "file_path": "C:/Users/atton/hermes-search-stack/trust.py",
+      "name": "test_cli_rank_writes_host_keyed_trust_json",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_trust.py",
+      "name": "test_trust_json_overrides",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_fact_check.py",
+-- dedupe
+      "name": "_dedupe_urls",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/core/engine.py",
+      "name": "_dedupe_texts",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/core/engine.py",
+      "name": "test_fetch_dedupes_by_tax_code",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_connectors_masothue.py",
+      "name": "test_extract_urls_dedupes_and_strips",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_search_prefetch.py",
+      "name": "test_extract_dedupes_ids_and_drops_empties",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_claims.py",
+-- merge
+      "name": "_merge_entity_sources",
+      "file_path": "C:/Users/atton/hermes-search-stack/searchstore/store.py",
+      "name": "test_extra_headers_merge_and_override",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_synthesis.py",
+      "name": "test_cli_rank_with_ledger_merge",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_trust.py",
+      "name": "_merge_ledger",
+      "file_path": "C:/Users/atton/hermes-search-stack/trust.py",
+      "name": "test_upsert_fuzzy_merges_cross_source_duplicates",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_business.py",
+-- probe
+      "name": "probe",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/core/cache.py",
+      "name": "probe",
+      "file_path": "C:/Users/atton/hermes-search-stack/searchstore/answer_cache.py",
+      "name": "_probe",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/app.py",
+      "name": "test_dry_run_variant_probes_share_passed_over_probes",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/test_run_corpus.py",
+      "name": "test_engine_status_cache_probe_ok",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_engine.py",
+-- revise
+      "name": "test_synthesis_revise_prepends_block",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_xhigh_pipeline.py",
+      "name": "test_revise_bounded_extra_searches",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_xhigh_pipeline.py",
+      "name": "test_revise_improves_and_accepts_draft2",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_xhigh_pipeline.py",
+      "name": "test_revise_not_improved_keeps_draft1",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_xhigh_pipeline.py",
+      "name": "test_no_revise_when_zero_budget",
+      "file_path": "C:/Users/atton/hermes-search-stack/tests/gateway/test_xhigh_pipeline.py",
+
+== file_summary protocols.py ==
+{
+  "status": "ok",
+  "pattern": "file_summary",
+  "target": "gateway/protocols.py",
+  "description": "Get a summary of all nodes in a file",
+  "summary": "Found 8 result(s) for file_summary('gateway/protocols.py')",
+  "result_count": 8,
+  "results_omitted": 0,
+  "results": [
+    {
+      "id": 376,
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/protocols.py",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/protocols.py",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/protocols.py",
+      "line_start": 1,
+      "line_end": 58,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+      "id": 377,
+      "kind": "Class",
+      "name": "SearchItem",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/protocols.py::SearchItem",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/protocols.py",
+      "line_start": 16,
+      "line_end": 22,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+      "id": 378,
+      "kind": "Class",
+      "name": "ExtractItem",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/protocols.py::ExtractItem",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/protocols.py",
+      "line_start": 26,
+      "line_end": 32,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+
+== file_summary standalone.py ==
+{
+  "status": "ok",
+  "pattern": "file_summary",
+  "target": "gateway/backends/standalone.py",
+  "description": "Get a summary of all nodes in a file",
+  "summary": "Found 20 result(s) for file_summary('gateway/backends/standalone.py')",
+  "result_count": 20,
+  "results_omitted": 0,
+  "results": [
+    {
+      "id": 137,
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "line_start": 1,
+      "line_end": 271,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+      "id": 138,
+      "kind": "Class",
+      "name": "StandaloneError",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py::StandaloneError",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "line_start": 29,
+      "line_end": 30,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+      "id": 139,
+      "kind": "Function",
+      "name": "_http_client",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py::_http_client",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "line_start": 33,
+      "line_end": 42,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+      "id": 140,
+      "kind": "Function",
+      "name": "_parse_mcp_body",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py::_parse_mcp_body",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "line_start": 45,
+      "line_end": 67,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+      "id": 141,
+      "kind": "Function",
+      "name": "_mcp_call",
+      "qualified_name": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py::_mcp_call",
+      "file_path": "C:/Users/atton/hermes-search-stack/gateway/backends/standalone.py",
+      "line_start": 70,
+      "line_end": 81,
+      "language": "python",
+      "parent_name": null,
+      "is_test": false
+    },
+    {
+
+== [3] 2026-10-08 06:45:55 summaries ==
+-- file_summary gateway/core/engine.py
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/core/engine.py",
+      "line_start": 1,
+      "line_end": 1083,
+      "kind": "Function",
+      "name": "_ms",
+      "line_start": 39,
+      "line_end": 40,
+      "kind": "Function",
+      "name": "_normalize_url",
+      "line_start": 43,
+      "line_end": 49,
+      "kind": "Function",
+      "name": "_request_deadline_s",
+      "line_start": 52,
+      "line_end": 57,
+      "kind": "Function",
+      "name": "_admission_wait_ms",
+      "line_start": 60,
+      "line_end": 65,
+      "kind": "Class",
+      "name": "SourceRef",
+      "line_start": 69,
+      "line_end": 76,
+      "kind": "Class",
+      "name": "EngineResult",
+      "line_start": 80,
+      "line_end": 91,
+      "kind": "Function",
+      "name": "_search_items_to_evidence",
+      "line_start": 94,
+      "line_end": 98,
+      "kind": "Function",
+      "name": "_renumber_evidence",
+      "line_start": 101,
+      "line_end": 103,
+      "kind": "Function",
+      "name": "_close_quietly",
+      "line_start": 106,
+      "line_end": 114,
+-- file_summary gateway/config.py
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/config.py",
+      "line_start": 1,
+      "line_end": 243,
+      "kind": "Function",
+      "name": "_default_hermes_home",
+      "line_start": 35,
+      "line_end": 42,
+      "kind": "Function",
+      "name": "_env_int",
+      "line_start": 45,
+      "line_end": 52,
+      "kind": "Function",
+      "name": "_env_float",
+      "line_start": 55,
+      "line_end": 62,
+      "kind": "Function",
+      "name": "_env_bool",
+      "line_start": 65,
+      "line_end": 73,
+      "kind": "Function",
+      "name": "_env_str",
+      "line_start": 76,
+      "line_end": 78,
+      "kind": "Function",
+      "name": "_env_opt",
+      "line_start": 81,
+      "line_end": 83,
+      "kind": "Function",
+      "name": "_env_headers",
+      "line_start": 86,
+      "line_end": 97,
+      "kind": "Function",
+      "name": "_read_dotenv_value",
+      "line_start": 100,
+      "line_end": 125,
+      "kind": "Class",
+      "name": "GatewayConfig",
+      "line_start": 129,
+      "line_end": 242,
+-- file_summary gateway/mcp/tools.py
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/gateway/mcp/tools.py",
+      "line_start": 1,
+      "line_end": 692,
+      "kind": "Function",
+      "name": "_resolve_backend",
+      "line_start": 64,
+      "line_end": 77,
+      "kind": "Function",
+      "name": "_resolve_store_path",
+      "line_start": 80,
+      "line_end": 86,
+      "kind": "Function",
+      "name": "_resolve_repo_root",
+      "line_start": 89,
+      "line_end": 96,
+      "kind": "Function",
+      "name": "_field",
+      "line_start": 99,
+      "line_end": 103,
+      "kind": "Function",
+      "name": "make_tools",
+      "line_start": 111,
+      "line_end": 488,
+      "kind": "Function",
+      "name": "hermes_search",
+      "line_start": 130,
+      "line_end": 151,
+      "kind": "Function",
+      "name": "hermes_extract",
+      "line_start": 153,
+      "line_end": 176,
+      "kind": "Function",
+      "name": "hermes_research",
+      "line_start": 178,
+      "line_end": 214,
+      "kind": "Function",
+      "name": "hermes_fact_check",
+      "line_start": 216,
+      "line_end": 348,
+-- file_summary deep_research.py
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/deep_research.py",
+      "line_start": 1,
+      "line_end": 438,
+      "kind": "Function",
+      "name": "split_body_sources",
+      "line_start": 102,
+      "line_end": 115,
+      "kind": "Function",
+      "name": "iter_prose",
+      "line_start": 118,
+      "line_end": 126,
+      "kind": "Function",
+      "name": "count_sections",
+      "line_start": 129,
+      "line_end": 131,
+      "kind": "Function",
+      "name": "find_bullets",
+      "line_start": 134,
+      "line_end": 136,
+      "kind": "Function",
+      "name": "find_bare_urls",
+      "line_start": 139,
+      "line_end": 144,
+      "kind": "Function",
+      "name": "split_sentences",
+      "line_start": 147,
+      "line_end": 163,
+      "kind": "Function",
+      "name": "citation_counts",
+      "line_start": 166,
+      "line_end": 168,
+      "kind": "Function",
+      "name": "word_count",
+      "line_start": 171,
+      "line_end": 173,
+      "kind": "Class",
+      "name": "CheckResult",
+      "line_start": 189,
+      "line_end": 194,
+
+== [4] 2026-10-08 06:46:13 ==
+-- engine.py top-level defs:
+39:def _ms() -> float:
+43:def _normalize_url(url: str) -> str:
+52:def _request_deadline_s(config) -> float:
+60:def _admission_wait_ms() -> float:
+69:class SourceRef:
+80:class EngineResult:
+94:def _search_items_to_evidence(items: list[SearchItem]) -> list[EvidenceItem]:
+101:def _renumber_evidence(evidence: list[EvidenceItem]) -> list[EvidenceItem]:
+106:def _close_quietly(resource) -> None:
+117:def _dedupe_texts(items: list[str], *, exclude: str = "") -> list[str]:
+132:def _issue_texts(report) -> list[str]:
+141:def _gap_texts(report, *, limit: int = 3, width: int = 80) -> list[str]:
+147:class _SynthChatLLM:
+178:class Engine:
+1068:def _dedupe_urls(items: list[SearchItem]) -> list[str]:
+1080:def default_engine(config: GatewayConfig) -> Engine:
+-- standalone.py imports:
+"""Standalone keyless backend — direct HTTP to public free-tier endpoints.
+
+Experimental ``SearchBackend`` that re-implements the keyless call paths proven
+by ``test_keyless_fallback.py`` / ``plugins.web.keyless_mcp`` without the Hermes
+runtime: search via Parallel -> Exa, extract via Parallel -> Exa -> Keenable.
+All calls are best-effort with clear errors; ``httpx`` is imported lazily so
+the gateway package stays importable without optional dependencies. Never used
+in tests (no live calls allowed).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from typing import Any
+
+from gateway.protocols import ExtractItem, SearchItem
+
+EXA_MCP_URL = "https://mcp.exa.ai/mcp"
+PARALLEL_MCP_URL = "https://search.parallel.ai/mcp"
+KEENABLE_API_URL = "https://api.keenable.ai"
+_KEENABLE_TITLE = "hermes-search-stack-gateway"
+
+_TIMEOUT_S = 30.0
+_EXA_LABELS = ("Title:", "URL:", "Highlights:", "Published:", "Author:")
+
+
+-- dep files:
+requirements-dev.txt
+requirements-gateway.txt
+-- http libs used:
+gateway/backends/standalone.py:36:        import httpx
+gateway/backends/standalone.py:254:            import httpx  # noqa: F401
+gateway/core/synthesis.py:123:            import httpx
+-- deep_research.py full summary:
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/deep_research.py",
+      "kind": "Function",
+      "name": "split_body_sources",
+      "kind": "Function",
+      "name": "iter_prose",
+      "kind": "Function",
+      "name": "count_sections",
+      "kind": "Function",
+      "name": "find_bullets",
+      "kind": "Function",
+      "name": "find_bare_urls",
+      "kind": "Function",
+      "name": "split_sentences",
+      "kind": "Function",
+      "name": "citation_counts",
+      "kind": "Function",
+      "name": "word_count",
+      "kind": "Class",
+      "name": "CheckResult",
+      "kind": "Function",
+      "name": "_vietnamese_word_count",
+      "kind": "Function",
+      "name": "_shorten",
+      "kind": "Function",
+      "name": "check",
+      "kind": "Function",
+      "name": "add",
+      "kind": "Function",
+      "name": "build_plan",
+      "kind": "Function",
+      "name": "build_fanout",
+      "kind": "Function",
+      "name": "_utf8_stdout",
+      "kind": "Function",
+      "name": "_build_parser",
+      "kind": "Function",
+      "name": "main",
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/tests/test_deep_research.py",
+      "kind": "Function",
+      "name": "_failed_ids",
+      "kind": "Test",
+      "name": "test_good_report_has_no_failures_and_all_check_ids",
+      "kind": "Test",
+      "name": "test_bad_report_fails_exactly_the_right_checks",
+      "kind": "Test",
+      "name": "test_vietnamese_report_passes_and_c7_stays_info",
+      "kind": "Test",
+      "name": "test_word_count_check_never_fails",
+-- trust.py summary:
+      "kind": "File",
+      "name": "C:/Users/atton/hermes-search-stack/trust.py",
+      "kind": "Class",
+      "name": "UsageError",
+      "kind": "Function",
+      "name": "_normalize_host",
+      "kind": "Function",
+      "name": "_host_of",
+      "kind": "Function",
+      "name": "_matches",
+      "kind": "Function",
+      "name": "_table_tier",
+      "kind": "Function",
+      "name": "_is_blocked",
+      "kind": "Function",
+      "name": "score_source",
+      "kind": "Function",
+      "name": "score_sources",
+      "kind": "Function",
+      "name": "host_overrides",
+      "kind": "Function",
+      "name": "_load_json",
+      "kind": "Function",
+      "name": "_load_sources",
+      "kind": "Function",
+      "name": "_ledger_is_snippet_only",
+      "kind": "Function",
+      "name": "_merge_ledger",
+      "kind": "Function",
+      "name": "_write_json",
+
+== [5] 2026-10-08 06:47:03 ==
+-- Engine methods:
+155:    def __init__(self, synth):
+158:    def complete(self, prompt: str, *, max_tokens: int) -> str:
+181:    def __init__(
+209:    def backend(self) -> SearchBackend:
+219:    def close(self) -> None:
+224:    def __enter__(self) -> Engine:
+227:    def __exit__(self, *exc) -> None:
+232:    def run(self, query: str, *, depth: str = "auto", allow_cache: bool = True) -> EngineResult:
+248:    def run_iter(self, query: str, *, depth: str = "auto", allow_cache: bool = True) -> Iterator[dict]:
+511:    def _note_timeout(self) -> None:
+522:    def _get_backend(self):
+529:    def _get_synth(self):
+545:    def _get_planner_llm(self):
+557:    def _run_planner(self, query: str, warnings: list[str]):
+573:    def _ultra_plan(self, sub_queries: list[str], deadline_passed):
+592:    def _get_ultra_pool(self, deadline_passed) -> tuple[object, bool]:
+609:    def _new_backend(self):
+615:    def _ultra_sub_searches(
+653:    def _ultra_extract(
+706:    def _merge_local_evidence(self, query: str, evidence: list[EvidenceItem]) -> tuple[list[EvidenceItem], int]:
+725:    def _verify_claims(self, answer: str, evidence: list[EvidenceItem]):
+735:    def _revise_pass(
+783:    def _redraft(self, query: str, evidence: list[EvidenceItem], issues: list[str], warnings: list[str]) -> str:
+807:    def _get_cache(self):
+818:    def _cache_get(self, query: str, warnings: list[str]) -> dict | None:
+828:    def _cache_put(self, pack: dict, warnings: list[str]) -> bool:
+840:    def _safe_search(self, query: str, max_results: int, errors: list[str], warnings: list[str]) -> list[SearchItem]:
+849:    def _extract_evidence(
+859:    def _extract_items(
+877:    def _items_to_evidence(
+896:    def _trust_order(self, evidence: list[EvidenceItem], warnings: list[str]) -> tuple[list[EvidenceItem], dict]:
+923:    def _verify_and_publish(
+997:    def _result_from_pack(self, hit: dict, warnings: list[str], timings: dict, t0: float) -> EngineResult:
+1025:    def _no_synth_answer(self, evidence: list[EvidenceItem]) -> str:
+1035:    def status(self) -> dict:
+-- build_fanout:
+361:def build_fanout(queries) -> str:
+362-    """Print the suggested ``web_search`` calls for an explicit query list."""
+363-    uniq = list(dict.fromkeys(queries))
+364-    lines = [
+365-        "Suggested web_search calls -- backend auto (NEVER pin web.search_backend),",
+366-        f"sleep >= {POLITENESS_SECONDS}s between live calls:",
+367-        "",
+368-    ]
+369-    lines += [f'  {i}. web_search "{q}"' for i, q in enumerate(uniq, 1)]
+370-    n = len(uniq)
+371-    if n < FANOUT_MIN:
+372-        note = f"below the {FANOUT_MIN}-{FANOUT_MAX} budget; add per-theme + news/recency angles"
+373-    elif n > FANOUT_MAX:
+374-        note = f"above the {FANOUT_MIN}-{FANOUT_MAX} budget; consider trimming"
+375-    else:
+376-        note = f"within the {FANOUT_MIN}-{FANOUT_MAX} budget"
+377-    lines += [
+378-        "",
+379-        f"Note: {n} unique queries -- {note}.",
+380-        "Register every result URL with sources.py add/ingest BEFORE drafting;",
+381-        "then web_extract the top hits via the keyless ring.",
+382-    ]
+383-    return "\n".join(lines)
+-- agents available:
+/c/Users/atton/AppData/Local/devin/cli/bin/devin
+/c/Users/atton/AppData/Roaming/npm/opencode
+/c/Users/atton/AppData/Roaming/npm/cline
+devin 3000.11.3 (9c803229faa4)
+1.18.35
+-- mcp tools list:
+35:FROZEN_TOOL_PARAMS: dict[str, dict[str, Any]] = {
+130:    def hermes_search(query: str, max_results: int = 10) -> dict:
+153:    def hermes_extract(urls: list[str], char_limit: int = 15000) -> dict:
+178:    def hermes_research(query: str, depth: str = "auto") -> dict:
+216:    def hermes_fact_check(claims_text: str, sources: list[dict]) -> dict:
+350:    def hermes_store_query(query: str, limit: int = 10, mode: str = "auto") -> dict:
+390:    def hermes_vn(
+415:    def hermes_places(
