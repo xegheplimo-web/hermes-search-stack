@@ -1,0 +1,55 @@
+=== R16-A TASK CARD — hermes_places MCP tool v1 (Devin) ===
+
+You are implementing R16-A in a git worktree. The contract is FROZEN:
+read `analysis/r16-interfaces.md` §1 FIRST (it is authoritative — implement it exactly).
+Background: `analysis/r16-plan.md` §0–§3 (R16 = Hermes Web UI; this tool feeds place cards + map).
+
+REPO CONTEXT
+- Worktree: `E:/aoe-native-agent-worktrees/r16-a` (your cwd; branch `r16-a`; base: current main HEAD = R16 Round-0 commit).
+- Python: run EVERYTHING with the main-repo venv:
+  `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe` (worktree as cwd).
+- Hermetic tests: NO network in pytest. No new dependencies (stdlib + existing dev deps only).
+- NO git commands (never commit/push/branch/stash — the orchestrator owns git).
+
+DELIVERABLE (exactly §1)
+1. `gateway/mcp/tools.py` (EDIT):
+   - `TOOL_NAMES` += `"hermes_places"` (now 7); add `FROZEN_TOOL_PARAMS["hermes_places"]`
+     = {"required": ("query",), "defaults": {"area": None, "category": None, "min_rating": None, "count": 8}}.
+   - `make_tools(engine, *, backend=None, store_db=None, places_db=None)` — add
+     `hermes_places(query, area=None, category=None, min_rating=None, count=8)`:
+     resolve places db (explicit `places_db` → else `<repo_root>/data/places.db` via the existing
+     `_resolve_repo_root`); missing file → `{"ok": false, "kind": "places", ..., "error": "places db not found at <path>"}`;
+     empty/blank query → `text=None`; clamp count 1..50; call `vn_geo.places.query_places(...)`;
+     map rows 1:1 to the frozen Place schema (§1) — `id` = row `url`; `url` = row `source_url` when
+     present else `id`; `viewport` = bbox-midpoint center + `[min_lon, min_lat, max_lon, max_lat]`
+     over rows with numeric lat+lon, else `null`; never raise.
+   - Update module docstrings that say "six" → seven.
+2. `gateway/mcp/server.py` (EDIT): add `places_db` kwarg passthrough to `build_mcp` /
+   `build_http_app` / `run_stdio` (mirror `store_db`).
+3. `tests/gateway/test_mcp_tools.py` (EDIT): update `test_tool_registry_has_exact_six_names` → seven
+   names, `len(listed) == 7`. Keep every other assertion intact.
+4. `tests/gateway/test_mcp_places.py` (NEW): hermetic tests per §1 — tmp SearchStore +
+   `vn_geo.places.save_places` (record schema: `tests/fixtures/vn_geo/places/scan_a.jsonl`);
+   monkeypatch `vn_geo.places.query_places` for enrichment passthrough (r16-b fields may not exist
+   on this branch yet — your code MUST use `.get()` so it works with or without them);
+   missing-db error; existing-but-empty db; area/category/min_rating passthrough; count clamp;
+   viewport math incl. degenerate single point; sort passthrough; one MCP smoke via
+   `build_mcp(engine, places_db=...)` + `call_tool("hermes_places", ...)`.
+
+FROZEN — DO NOT TOUCH
+`hermes_vn` and the other six tools (byte-identical), `gateway/core/*`, `gateway/backends/*`,
+`gateway/config.py`, `vn_geo/*`, `searchstore/*`, `app.py`, tests outside `tests/gateway/`.
+
+HARD RULES
+- Never write `data/places.db`, `data/vn-geo.db`, `data/searchstore.db` — tmp_path only in tests.
+- Structured errors only; the tool must never raise.
+- Response keys exactly as §1 (all Place keys always present; nullable → None).
+
+SELF-CHECKS BEFORE FINISHING (all must pass; paste evidence into result.json)
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest tests/gateway/test_mcp_places.py tests/gateway/test_mcp_tools.py -q` → pass.
+2. Full suite: `...python.exe -m pytest -q` → exit 0.
+3. `...python.exe -m ruff check gateway/mcp tests/gateway` + `ruff format --check gateway/mcp tests/gateway` → clean.
+4. Write `result.json` in your worktree root (same format as previous rounds: status, files_changed,
+   tests, gates, deviations, notes). Note any §1 ambiguity you resolved and how (most conservative reading).
+
+DO NOT modify anything outside your scope.

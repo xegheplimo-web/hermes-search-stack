@@ -1,0 +1,41 @@
+=== R16-B TASK CARD — query_places output enrichment (OpenCode) ===
+
+You are implementing R16-B in a git worktree. The contract is FROZEN:
+read `analysis/r16-interfaces.md` §2 FIRST (it is authoritative — implement it exactly).
+
+REPO CONTEXT
+- Worktree: `E:/aoe-native-agent-worktrees/r16-b` (your cwd; branch `r16-b`; base: current main HEAD = R16 Round-0 commit).
+- Python: run EVERYTHING with the main-repo venv:
+  `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe` (worktree as cwd).
+- Hermetic tests: NO network. No new dependencies.
+- NO git commands (never commit/push/branch/stash — the orchestrator owns git).
+
+DELIVERABLE (exactly §2 — ADDITIVE ONLY)
+1. `vn_geo/places.py` (EDIT — `query_places` function body only):
+   add to each returned row: `source_id`, `phone`, `website`, `hours` (from stored meta `rec`),
+   `source_url` (`rec.get("source_url")` else `rec["extra"]["url"]`), `thumbnail`
+   (`rec.get("thumbnail")` else `rec["extra"]["thumbnail"]`).
+   All new values coerced `str(v).strip() or None`; missing → None. Do NOT change the function
+   signature, filters, sort, limit, or any existing key (existing behavior byte-identical).
+2. `tests/test_places_enrich.py` (NEW): hermetic — save records with and without the new fields via
+   `places.save_places` (record schema example: `tests/fixtures/vn_geo/places/scan_a.jsonl`);
+   assert the new keys are present with correct values; `extra.url` fallback for `source_url`;
+   blank → None; regression: old keys unchanged for the scan_a-style records (names/ratings/urls).
+
+FROZEN — DO NOT TOUCH
+`save_places`, `_record_url`, `_record_text`, `diff`, the CLI, `load_scan_jsonl`/`save_scan_jsonl`,
+everything outside `vn_geo/places.py` + your new test file. Do NOT edit
+`tests/test_vn_geo_places.py`, `tests/test_refresh_places.py`, `tests/test_providers.py` —
+they must pass UNCHANGED.
+
+HARD RULES
+- Never write live dbs (`data/*.db`) — tmp_path only.
+- The enrichment is purely additive; existing tests stay green.
+
+SELF-CHECKS BEFORE FINISHING (all must pass; paste evidence into result.json)
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest tests/test_places_enrich.py tests/test_vn_geo_places.py tests/test_refresh_places.py tests/test_providers.py -q` → pass.
+2. Full suite: `...python.exe -m pytest -q` → exit 0.
+3. `...python.exe -m ruff check vn_geo/places.py tests/test_places_enrich.py` + `ruff format --check vn_geo/places.py tests/test_places_enrich.py` → clean.
+4. Write `result.json` in your worktree root (status, files_changed, tests, gates, deviations, notes).
+
+DO NOT modify anything outside your scope.
