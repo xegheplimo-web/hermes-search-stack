@@ -1,0 +1,63 @@
+=== R15-B2 TASK CARD — ultra mode + backend worker pool + separability routing (Devin) ===
+
+You are implementing R15-B2 in a git worktree. The contract is FROZEN:
+read `analysis/r15-interfaces.md` §7 FIRST (it is authoritative — follow it exactly).
+Intent background: `analysis/r15-plan.md` §3-B (ultra = parallel workstreams, only for separable
+sub-problems; NOT draft×N; adaptive compute). Wave-1 (D reliability) and wave-2 (B1 xhigh) are
+already merged — reuse their machinery, do not modify it.
+
+REPO CONTEXT
+- Worktree: `E:/aoe-native-agent-worktrees/r15-b2` (your cwd; branch `r15-b2`; base `b8a22d5`).
+- Python: run EVERYTHING with the main-repo venv:
+  `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe` (worktree as cwd).
+- Hermetic tests: NO network in pytest. No new dependencies (stdlib only).
+- NO git commands (never commit/push/branch/stash — the orchestrator owns git).
+
+DELIVERABLE (exactly §7)
+1. `gateway/core/pool.py` (NEW) — `BackendPool` per §7.1: lazy workers (thread + backend instance on
+   first op claim), size clamped 1..4, `map_search`/`map_extract` returning per-op
+   `(input, result|None, error)` / `list[...]|None`, failure isolation (never raises per-op),
+   deadline skip (`"deadline"`), deterministic input-order output, `close()`.
+2. `gateway/core/ultra.py` (NEW) — `UltraPlan` + `plan_ultra(sub_queries, *, max_workstreams=4)`
+   per §7.2 (round-robin partition; n<2 → inert; NEVER raises; no model call).
+3. `gateway/core/engine.py` (EDIT) — §7.3 wiring ONLY: after B1 computes `sub_queries`, when
+   `ultra_enabled` and deep and len≥2 and not deadline → parallel retrieval via pool
+   (searches, then per-workstream extract batches, merge in workstream order before trust
+   ordering); infra-failure ops retried ONCE serially (warning `"ultra: N op(s) retried serially"`);
+   pool-dead → serial fallback + warning `"ultra pool unavailable — serial fallback"`;
+   additive timings `ultra_ms`/`ultra_n` (present only when ultra ran); additive `Engine.close()`
+   (+`__enter__`/`__exit__`). Probe / fast path / revise re-searches / B1 stages: UNCHANGED.
+4. `gateway/config.py` (EDIT) — §7.4 knobs only: `ultra_enabled=True`, `ultra_max_workstreams=4`,
+   `pool_size=4` (env `HERMES_GATEWAY_ULTRA_ENABLED` / `HERMES_GATEWAY_ULTRA_MAX_WORKSTREAMS` /
+   `HERMES_GATEWAY_POOL_SIZE`).
+5. Tests (NEW): `tests/gateway/test_pool.py`, `tests/gateway/test_ultra.py`,
+   `tests/gateway/test_ultra_pipeline.py` per §7.6. **Parallelism MUST be proven with a Barrier-based
+   fake backend** (barrier timeout → explicit assertion failure; NEVER a hanging test). Engine tests
+   use StubBackend + existing conftest fakes; keep ALL existing gateway tests green (the conftest
+   autouse fixture defaults `VN_GEO_DB_ENV` to an absent path — do not break that).
+
+FROZEN — DO NOT TOUCH
+`gateway/core/local_context.py`, `planner.py`, `claims.py`, `synthesis.py`, `router.py`,
+`gateway/backends/*` (pool only CONSUMES `create_backend` — import, don't edit), `app.py`, `mcp/*`,
+`evals/*`, `vn_geo/*`, `searchstore/*`, `scripts/*`, tests outside `tests/gateway/`.
+
+HARD RULES
+- Ultra parallelizes the SAME retrieval set B1 computes — no extra searches, no extra synthesis
+  calls, no draft×N.
+- All new paths deadline-guarded via the existing `deadline_passed()`; skipped ops → partial
+  evidence + existing-style warnings.
+- `pool_size` is internal concurrency only (≤4); admission/healthz untouched.
+- Result/event shapes: only ADDITIVE keys (`ultra_ms`, `ultra_n`). Old shapes stay valid.
+- Ultra OFF or n==1: byte-compatible with the current B1 path (same calls, same order).
+
+SELF-CHECKS BEFORE FINISHING (all must pass; paste evidence into result.json)
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q` → exit 0 (full suite).
+2. Same interpreter: `ruff check .` clean; `ruff format --check .` clean (run `ruff format .` first
+   if needed).
+3. Barrier test: `map_search` runs `size` ops concurrently (never >size in flight).
+4. Engine integration: separable deep query → `ultra_n>=2` in timings; `ultra_enabled=False` →
+   no ultra keys + same sequential call order as B1; factory raising → serial fallback + warning.
+5. Write `result.json` (same format as previous rounds: status, files_changed, tests, gates,
+   deviations, notes). Note any §7 ambiguity you resolved and how (most conservative reading).
+
+DO NOT modify anything outside your scope. DO NOT re-run or "improve" B1 logic — wire around it.

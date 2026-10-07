@@ -275,3 +275,89 @@ exit 0 + ruff clean + fast-path regression suite untouched.
 **Acceptance (orchestrator):** gates + independent script (stub backend + fake synth): deep with
 xhigh on → ≥1 extra stage timings present; off → none; fast → none; local hits appear when scratch
 db has matching entity.
+
+---
+
+## §7 Wave-3 B2 — ultra mode + backend worker pool + separability routing (FROZEN 2026-10-07)
+
+Intent (plan §3-B): parallel workstreams for separable deep queries, ONLY after real concurrency
+exists (D done). **Ultra does NOT draft×N** (review-adopted: adaptive compute) — it parallelizes the
+SAME B1 retrieval plan across a worker pool, then reuses the B1 single-synthesis + claims path
+unchanged. v1 separability signal = the B1 decomposed sub-question set (planner + markers);
+difficulty/uncertainty signals are deferred (keep deterministic).
+
+### §7.1 New module `gateway/core/pool.py`
+
+`class BackendPool` — bounded parallel execution of the existing `SearchBackend` protocol:
+- `__init__(self, factory, *, size: int = 4, deadline_passed=None)` — `factory: Callable[[], SearchBackend]`;
+  `size` clamped to 1..4; workers are **lazy** (backend instance + thread created on first op claim;
+  never at construction).
+- `map_search(self, queries, *, max_results) -> list[tuple[str, list[SearchItem] | None, str]]` —
+  per-query `(query, items_or_None, error_or_"")`. `map_extract(self, batches, *, char_limit) ->
+  list[list[ExtractItem] | None]` — same semantics per batch.
+- **Failure isolation**: a worker op raising → that entry gets `None` + error text; other ops
+  unaffected. The pool NEVER raises for per-op failures; it raises only when it cannot run at all.
+- **Deadline**: each op checks `deadline_passed()` before starting; skipped ops → `(query, None, "deadline")`.
+  In-flight ops are NOT cancelled (cooperative semantics, same as D).
+- `close()` — terminates backends exposing `close()`; worker threads are daemons (never block exit).
+- Deterministic results: output order == input order, regardless of completion order.
+
+### §7.2 New module `gateway/core/ultra.py`
+
+`@dataclass(slots=True) class UltraPlan: workstreams: list[list[str]]; n: int; reason: str`
+
+`plan_ultra(sub_queries: list[str], *, max_workstreams: int = 4) -> UltraPlan` — pure partitioner,
+NEVER raises, no model call:
+- `n = min(max_workstreams, len(sub_queries))`; round-robin partition into `n` groups.
+- `n < 2` → `UltraPlan(workstreams=[], n=1, reason="single")` (ultra inert).
+- `n >= 2` → `reason="partitioned"`.
+- Input is the SAME sub-query list B1 computes (`plan parts ∪ marker splits`, deduped, capped by
+  `deep_search_queries` — §6.4) — ultra changes execution, not the set.
+
+### §7.3 Engine wiring (`gateway/core/engine.py`)
+
+- After B1 computes `sub_queries`: when `ultra_enabled` and deep and `len(sub_queries) >= 2` and not
+  deadline → `ultra = plan_ultra(sub_queries, max_workstreams=...)`.
+- Ultra active: searches run via `pool.map_search` (parallel); extraction via `pool.map_extract`
+  (batches = per-workstream URL lists); batch results merged in workstream order before trust
+  ordering. The retrieval set is IDENTICAL to B1's; only execution is parallel.
+- **Infra-failure retry**: ops that failed for infrastructure reasons (not `"deadline"`) are retried
+  ONCE sequentially on the engine's primary backend; warning `"ultra: N op(s) retried serially"`.
+  Deadline-skipped ops are never retried.
+- **Serial fallback**: if the pool cannot run at all (construction/map raises unexpectedly), the
+  sub-queries run sequentially exactly as B1 + warning `"ultra pool unavailable — serial fallback"`.
+- Probe (query #1), fast path, revise re-searches: **unchanged** (primary backend, sequential).
+- Ultra OFF / n==1: byte-compatible with today's B1 path (same calls, same order).
+- Timings additive: `ultra_ms`, `ultra_n` — present ONLY when ultra actually ran (n≥2). `done`
+  payload otherwise unchanged.
+- Additive `Engine.close()` (+ `__enter__`/`__exit__`): closes pool + primary backend when they
+  expose `close()`. No behavior change otherwise.
+
+### §7.4 Config knobs (env `HERMES_GATEWAY_*`, all additive)
+
+`ultra_enabled: bool = True` (deep only; inert unless n≥2) · `ultra_max_workstreams: int = 4` ·
+`pool_size: int = 4` (internal concurrency bound; admission/healthz untouched).
+
+### §7.5 Scope (frozen)
+
+- NEW: `gateway/core/pool.py`, `gateway/core/ultra.py`, `tests/gateway/test_pool.py`,
+  `tests/gateway/test_ultra.py`, `tests/gateway/test_ultra_pipeline.py`.
+- EDIT: `gateway/core/engine.py` (deep-path wiring + additive close), `gateway/config.py` (knobs).
+- NOT allowed: `local_context.py`, `planner.py`, `claims.py`, `synthesis.py`, `router.py`,
+  `gateway/backends/*` (pool only CONSUMES `create_backend`), `app.py`, `mcp/*`, `evals/*`,
+  `vn_geo/*`, `searchstore/*`, `scripts/*`, tests outside `tests/gateway/`.
+
+### §7.6 Tests + acceptance (hermetic; no network)
+
+- `test_pool.py`: parallelism proven with a **Barrier(N) fake backend** (barrier timeout → explicit
+  failure, never a hanging test); in-flight count never exceeds `size`; failure isolation;
+  deadline skip; deterministic ordering; `close()`.
+- `test_ultra.py`: partition math (round-robin, n=min, n<2 inert), never raises.
+- `test_ultra_pipeline.py`: engine integration — separable query → `ultra_n>=2` + parallel proven;
+  non-separable → no ultra keys; `ultra_enabled=False` → legacy; infra failure → serial retry +
+  warning; pool dead → serial fallback + warning; deadline → partial.
+- Plain pytest exit 0 + ruff clean; fast path + B1 behavior untouched.
+- **Acceptance (orchestrator)**: gates + independent script (Barrier fake backend, timing-free):
+  separable deep → `ultra_n>=2`, max in-flight == n, evidence merged + ids renumbered; ultra off →
+  max in-flight == 1, no ultra keys; 1-of-3 worker raises → survivors merged + retry warning;
+  factory raising → serial fallback warning.
