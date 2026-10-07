@@ -15,7 +15,7 @@ This repo proves — with runnable scripts and committed evidence — that Herme
 | `web_search` | Free managed Perplexity (`search_type=fast`) via Nous Tool Gateway identity — auto-detect, **never pinned in config** | `perplexity-gateway.nousresearch.com` |
 | `web_extract` | Keyless ring over free tiers (round-robin) | exa / parallel / keenable |
 | Fallback | `keyless_rescue` one-shot ring + managed-firecrawl fallback for search | verified via direct `_rescue_search()` call |
-| Cache | Web cache on, 20 min TTL | — |
+| Cache | Web cache on, 60 min TTL | — |
 
 Key results (see `REPORT.md` for full evidence):
 
@@ -40,9 +40,13 @@ Vietnam-only data kit feeding `searchstore` (stdlib-only, hermetic tests, CLI pe
 | `enterprises` | provincial CKAN open data (Hải Phòng, Tây Ninh…) | monthly business-registration datasets → ingest / query |
 | `refresh` | the other modules (no new source) | coverage report (what's missing per area/source) + auto-backfill `run` with content-addressed dedup — re-running unchanged data adds **0 rows**; weekly cron: `scripts/refresh_cron.py` + `analysis/refresh-areas.json` |
 | `goong` | Goong REST v2 (VN Google-Maps alternative) | autocomplete / geocode / reverse / place detail with a hard local **1,000 req/day cap** (free tier); key via `GOONG_API_KEY` or `<LOCALAPPDATA>/hermes/vn-geo/keys.env` (never in repo) — account activation pending |
+| `business` | masothue / CKAN-ext / gosom JSONL | business-entity pipeline (round 13): normalize → geocode (Goong → Nominatim) → dedupe-upsert; FTS query with freshness flags; diff events; `seed` / `classify-rev` CLI |
 
 Source playbook and per-source verification notes: `analysis/vn-geodata-playbook.md`,
 `analysis/vn-business-data-sources.md`. Run: `python -m vn_geo.<module> --help`.
+
+Business layer CLI (round 13): `python -m vn_geo business seed|query|diff|classify-rev`
+— see `analysis/r13-user-guide.md`.
 
 ## Universal gateway (`gateway`, round 8)
 
@@ -159,6 +163,11 @@ Hard rules:
 - Round 6 — quality & speed wave: `searchstore/answer_cache.py`, `trust.py`, `depth_policy.py`, `scripts/scoreboard.py` (see `analysis/r6-interfaces.md`; module inventory per `analysis/r7-interfaces.md` evidence).
 - Round 7 — integration wave: `research_pack.py` glue + deep-research skill wiring (see `analysis/r7-interfaces.md`, `analysis/round7-verification.md`).
 - Round 8 — universal gateway: `gateway/` (OpenAI-compatible HTTP + MCP, one model `hermes-search`) + `vn_news.py` VN-news ring; live acceptance PASS — cited chat ~10s, SSE 155 deltas + `[DONE]`, MCP 6/6 tools, 1,285 live news records with idempotent re-ingest; full suite 723 (see `analysis/round8-verification.md`, `evidence/r8/`).
+- Round 9 — wave-2 hardening: five verified high-severity defects fixed by severity, each with before/after evidence (see `analysis/r9-report.md`).
+- Round 10 — quality wave: synthesis freshness/date, fast-path trust source policy, 45-case VN corpus runner — 45/45 after with 0 regressions (see `analysis/r10-report.md`).
+- Round 11 — vLLM-informed service-quality upgrade proposals (analysis-only 4-agent wave; see `analysis/r11-proposals.md`).
+- Round 12 — completion plan: gateway P0 reliability bundle + QA optimization loop (docs only; see `analysis/r12-plan.md`).
+- Round 13 — VN business data layer: `vn_geo` business pipeline (normalize / geocode / dedupe-upsert / FTS query / diff) + masothue · CKAN-ext · gosom connectors + `business seed|query|diff|classify-rev` CLI; live seed verified (see `analysis/r13-verification.md`).
 
 ## License
 
