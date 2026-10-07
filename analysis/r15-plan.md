@@ -115,3 +115,12 @@ confirmed (`hermes_bridge.py`) → ultra requires worker pool (B2); adaptive com
 notes; dual benchmark (frozen 5.6-xhigh + moving frontier).
 Adjusted vs review: wave-1 parallelization (D ∥ A ∥ C ∥ E — D only gates B1/B2, not A/C/E); Goong
 deferred to key-activation; judge implementation stays out of A (mechanical ground truth only).
+
+## 8. Queued after R15
+
+- **R16 — Hermes Web UI** (Sếp brief, queued): ChatGPT-like chat + sources + place cards + MapLibre map.
+  Verify the brief against HEAD when starting; do not start until the current track finishes.
+- **R17 (candidate) — multi-source providers**: Exa/Parallel as first-class sources + keyless social
+  (V2EX/Bilibili/YouTube/RSS); credentialed platforms stay agent-side (agent-reach) with caller-provided
+  `context` passthrough. Scoped in `analysis/r17-providers-plan.md`; runs after B2 (uses its worker pool).
+
