@@ -2,19 +2,22 @@
 """Crosscheck v3 — snippet = FIRST line after ref chip only; descriptive anchors
 (comments/annotations, no code punctuation) are marked DESC and not counted as errors.
 Binary files (db) marked BINARY.
-Usage: python scripts/codemap_refs_check.py [codemap-file]  (default: codemap4)
+Usage: python scripts/codemap_refs_check.py [codemap-file]  (default: newest analysis/codemap*.txt)
 """
 
+import glob
 import os
 import re
 import sys
 
 REPO = r"C:/Users/atton/hermes-search-stack"
-CM = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else os.path.join(REPO, "analysis", "codemap4-searchstore-hybrid-devin-2026-10-07.txt")
-)
+if len(sys.argv) > 1:
+    CM = sys.argv[1]
+else:
+    _cands = glob.glob(os.path.join(REPO, "analysis", "codemap*.txt"))
+    if not _cands:
+        sys.exit("no analysis/codemap*.txt found — pass the codemap file as argv[1]")
+    CM = max(_cands, key=os.path.getmtime)
 
 CAND = {
     "app.py": ["gateway/app.py"],
