@@ -46,7 +46,7 @@ FROZEN_TOOL_PARAMS: dict[str, dict[str, Any]] = {
     },
 }
 
-_VN_KINDS: tuple[str, ...] = ("admin", "places", "enterprises", "news")
+_VN_KINDS: tuple[str, ...] = ("admin", "places", "enterprises", "news", "business")
 
 _DEFAULT_STORE_DB = "data/searchstore.db"
 
@@ -385,10 +385,11 @@ def make_tools(
         area: str | None = None,
         days: int | None = None,
     ) -> dict:
-        """Vietnam data lookup by *kind* (admin/places/enterprises/news).
+        """Vietnam data lookup by *kind* (admin/places/enterprises/news/business).
 
-        ``news`` delegates to the ``vn_news`` module when present; the other
-        kinds query the SearchStore filtered by kind tag.
+        ``news`` delegates to the ``vn_news`` module when present, ``business``
+        queries the local vn-geo.db entity store read-only (R15-C), and the
+        other kinds query the SearchStore filtered by kind tag.
         """
         norm_kind = (kind or "").strip().lower()
         if norm_kind not in _VN_KINDS:
@@ -399,6 +400,8 @@ def make_tools(
             }
         if norm_kind == "news":
             return _vn_news_query(query, days=days, store_db=store_path or None)
+        if norm_kind == "business":
+            return _vn_business_query(query, area=area)
         return _vn_store_query(store_path, norm_kind, query, area=area, days=days)
 
     return {
@@ -455,6 +458,43 @@ def _vn_news_query(query: str, *, days: int | None, store_db: str | None = None)
             }
         )
     return {"results": results, "kind": "news"}
+
+
+def _vn_business_query(query: str, *, area: str | None) -> dict:
+    """Business path: read-only vn-geo.db entity lookup via core.local_context.
+
+    Returns ``{"ok", "kind", "count", "items"}`` where each item carries the
+    entity fields (the ``vn_geo.business.query_entities`` meta shape) plus
+    ``confidence`` and ``ambiguous``; a missing database degrades to
+    ``{"ok": False, "error": "vn-geo.db not found at <path>"}``.
+    """
+    try:
+        from gateway.core import local_context
+    except Exception as exc:  # module absent, broken, or mid-edit — stay graceful
+        return {"ok": False, "kind": "business", "error": f"local_context not available: {exc}"}
+    db_path = local_context.resolve_db_path(None)
+    if not db_path.exists():
+        return {"ok": False, "kind": "business", "error": f"vn-geo.db not found at {db_path}"}
+    text = query if not area else f"{query} {area}"
+    try:
+        # Shared matching core from the same task's module (R15-C).
+        scored = local_context._scored_entities(text, db_path)
+    except Exception as exc:  # noqa: BLE001 — structured error, never raise
+        return {"ok": False, "kind": "business", "error": f"business query failed: {exc}"}
+    if area:
+        # Same area filter semantics as vn_geo.business.query_entities:
+        # folded substring over address_text/area_old/province.
+        from vn_geo.categories import fold_text
+
+        area_key = fold_text(area)
+        scored = [
+            item
+            for item in scored
+            if area_key
+            in fold_text(" ".join(str(item.meta.get(k) or "") for k in ("address_text", "area_old", "province")))
+        ]
+    items = [dict(item.meta, confidence=item.confidence, ambiguous=item.ambiguous) for item in scored]
+    return {"ok": True, "kind": "business", "count": len(items), "items": items}
 
 
 def _vn_store_query(
