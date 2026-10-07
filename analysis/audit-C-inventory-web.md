@@ -227,13 +227,13 @@ Toàn bộ là triple `battery_*` / `keyless_*` dạng `.{json,log,md}` từ 202
 
 ```python
 TOOL_NAMES: tuple[str, ...] = (
-    "hermes_search",      # web search qua engine backend
-    "hermes_extract",     # extract URLs (char_limit dflt 15000)
-    "hermes_research",    # deep research (depth dflt auto)
+    "hermes_search",  # web search qua engine backend
+    "hermes_extract",  # extract URLs (char_limit dflt 15000)
+    "hermes_research",  # deep research (depth dflt auto)
     "hermes_fact_check",  # fact-check claims+sources
-    "hermes_store_query", # truy vấn SearchStore (limit 10, mode auto)
-    "hermes_vn",          # VN kinds: admin/places/enterprises/news/business
-    "hermes_places",      # places query + area/category/min_rating/count=8
+    "hermes_store_query",  # truy vấn SearchStore (limit 10, mode auto)
+    "hermes_vn",  # VN kinds: admin/places/enterprises/news/business
+    "hermes_places",  # places query + area/category/min_rating/count=8
 )
 ```
 

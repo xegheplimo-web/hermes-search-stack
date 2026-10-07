@@ -11,7 +11,7 @@
 
 - **Hệ thống:** Hermes Search Stack — lớp tìm kiếm/trả lời kiểu Perplexity + dữ liệu địa lý-doanh nghiệp VN (`vn_geo`) + SearchStore + gateway đa backend + 3 bề mặt tích hợp (MCP / OpenAI-compat / api_server) + web UI (R16). Tổng ~2,000 LOC TS (web) + ~14,600 LOC Python (prod) + 16,944 LOC tests.
 - **Chuỗi giá trị end-to-end đã THÔNG:** ingest (connectors) → store (SearchStore, versioning) → query (local-first vn-geo + web ring) → gateway engine (fast/deep/xhigh) → hiển thị (MCP 7 tools · OpenAI-compat có tool-calls · web UI chat + places/map).
-- **Dịch vụ đang chạy (verify 2026-10-07 ~17:2x):** gateway `:8787` (healthz ok, backend `auto`, watchdog task 5 phút) · Hermes api_server `:8642` LIVE (đã set API_SERVER_KEY) · debug Chrome `:9222`.
+- **Dịch vụ đang chạy (verify 2026-10-07 ~17:2x–18:04):** gateway `:8787` (healthz ok, backend `auto`, watchdog task 5 phút) · Hermes api_server `:8642` LIVE (đã set API_SERVER_KEY) · debug Chrome `:9222` (đang đóng lúc probe 18:04 — mở lại khi cần CDP).
 - **Dữ liệu live:** searchstore 1.285 docs · vn-geo 6.519 current (admin 3.355 · enterprise 1.630 · entity 1.533 · poi 1) · places 8 (pilot Yên Dũng) · answers 4 packs.
 - **R16:** W1 ✓ W1.5 ✓ W2 ✓ W3 ✓ — web UI build + SSE demo/chat + Playwright 8 markers/8 cards, 0 console errors. **W4 (hardening + full-stack wiring)** là bước kế tiếp; đã có probe E2E thật (`r16w4_*`, 17:05–17:13) nhưng chưa thành ledger chính thức.
 - **Codemap Devin:** đã truy cập + đối chiếu độc lập — 29/30 line-refs còn đúng; 7 điểm lệch trong codemap + **1 lỗi code thật** (meta-only change bị nuốt trong `entity_upsert` — §5) → xem khuyến nghị §9.
@@ -50,7 +50,7 @@
 - **Watchdog `HermesSearchGateway`** (5 phút) — last run OK, giữ `:8787` sống; task logon ở trạng thái Ready (chưa từng chạy — lần boot sau sẽ kích).
 - **Cron:** vn-geo refresh (Mon 08:00, mode script) · self-upgrade sweep (Mon 09:30) · health (daily) — lần chạy gần nhất đều ok (refresh 06/10 fail→tự phục hồi 07/10).
 - **Refresh log 07/10:** 5.423 entries unchanged · +25 business mới seed → xác nhận đường ingest định kỳ hoạt động.
-- **Ports:** `:8787` gateway · `:8642` api_server · `:9222` Chrome (có kết nối từ tiến trình api_server).
+- **Ports:** `:8787` gateway (pid 42984) · `:8642` api_server (pid 28300) · `:9222` Chrome debug — không listen lúc probe 18:04 (audit-B §3).
 
 ## 5. Đối chiếu codemap Devin (audit-A — do Devin thực hiện, orchestrator re-verify độc lập)
 
