@@ -12,6 +12,7 @@ gateway degrades gracefully outside the repo context.
 
 from __future__ import annotations
 
+import inspect
 import json
 import time
 import uuid
@@ -20,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from gateway.core.claims import confidence_from, extract_claims, verify_claims
+from gateway.core.planner import plan_query
 from gateway.core.router import build_signals, decide, query_markers, split_query
 from gateway.protocols import EvidenceItem, ExtractItem, SearchItem
 from gateway.security.admission import ADMISSION_WAIT_MS
@@ -73,7 +76,7 @@ class SourceRef:
 
 @dataclass(slots=True)
 class EngineResult:
-    """Frozen result shape (r8-interfaces.md §5)."""
+    """Frozen result shape (r8-interfaces.md §5); confidence/gaps additive (§6.4)."""
 
     answer_markdown: str
     sources: list[SourceRef]
@@ -82,6 +85,8 @@ class EngineResult:
     reason: str = ""
     warnings: list[str] = field(default_factory=list)
     timings_ms: dict[str, int] = field(default_factory=dict)
+    confidence: str | None = None  # "high"|"medium"|"low"; deep+xhigh only
+    gaps: list[str] = field(default_factory=list)  # <=3 issue texts, 80-char cap
 
 
 def _search_items_to_evidence(items: list[SearchItem]) -> list[EvidenceItem]:
@@ -89,6 +94,72 @@ def _search_items_to_evidence(items: list[SearchItem]) -> list[EvidenceItem]:
     return [
         EvidenceItem(id=i + 1, title=it.title, url=it.url, content=it.description or "") for i, it in enumerate(items)
     ]
+
+
+def _renumber_evidence(evidence: list[EvidenceItem]) -> list[EvidenceItem]:
+    """Renumber all ids sequentially 1..N (local prepend / revise append)."""
+    return [EvidenceItem(id=i + 1, title=ev.title, url=ev.url, content=ev.content) for i, ev in enumerate(evidence)]
+
+
+def _dedupe_texts(items: list[str], *, exclude: str = "") -> list[str]:
+    """Casefold-deduped, trimmed, first-seen order; *exclude* (the query) dropped."""
+    seen: set[str] = set()
+    out: list[str] = []
+    excluded = str(exclude or "").strip().casefold()
+    for item in items:
+        text = str(item or "").strip()
+        key = text.casefold()
+        if not text or key in seen or key == excluded:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
+def _issue_texts(report) -> list[str]:
+    """Issue claim texts: ``unsupported`` + ``uncited_factual`` verdicts."""
+    return [
+        v.claim.text
+        for v in getattr(report, "claims", [])
+        if getattr(v, "status", "") in ("unsupported", "uncited_factual")
+    ]
+
+
+def _gap_texts(report, *, limit: int = 3, width: int = 80) -> list[str]:
+    """``EngineResult.gaps``: <=3 issue texts (+ contradictions), 80-char cap."""
+    texts = _issue_texts(report) + list(getattr(report, "possible_contradictions", []) or [])
+    return [str(t)[:width] for t in texts[:limit]]
+
+
+class _SynthChatLLM:
+    """Duck-typed ``llm.complete`` seam for planner/claims-judge calls.
+
+    One-shot chat completion against the synthesizer's configured endpoint,
+    reusing its (already auth/header-wired) HTTP client; never built when
+    synthesis is unavailable, so the planner degrades to the heuristic path.
+    """
+
+    def __init__(self, synth):
+        self._synth = synth
+
+    def complete(self, prompt: str, *, max_tokens: int) -> str:
+        client = getattr(self._synth, "_client", None)
+        if client is None:
+            raise RuntimeError("planner llm unavailable")
+        resp = client.post(
+            "/chat/completions",
+            json={
+                "model": getattr(self._synth, "model", "") or "",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.0,
+                "max_tokens": int(max_tokens),
+                "stream": False,
+            },
+        )
+        if getattr(resp, "status_code", 200) >= 400:
+            raise RuntimeError(f"planner llm HTTP {getattr(resp, 'status_code', '?')}")
+        data = resp.json()
+        return str((((data.get("choices") or [{}])[0].get("message") or {}).get("content")) or "")
 
 
 class Engine:
@@ -102,6 +173,7 @@ class Engine:
         synth=None,
         cache=None,
         metrics=None,
+        planner_llm=None,
     ):
         self.config = config
         self._backend = backend
@@ -111,6 +183,9 @@ class Engine:
         self._cache_error: str | None = None
         # Optional GatewayMetrics sink (additive); deadline hits count as timeouts.
         self.metrics = metrics
+        # Optional duck-typed planner/judge llm seam (additive); lazily built
+        # from the synth client when not injected (tests pass fakes).
+        self._planner_llm = planner_llm
 
     @property
     def backend(self) -> SearchBackend:
@@ -221,12 +296,27 @@ class Engine:
         #    probe snippets are the best available partial evidence.
         t = _ms()
         search_items: list[SearchItem] = list(probe)
+        xhigh_on = mode == "deep" and bool(getattr(self.config, "xhigh_enabled", True))
+        plan = None
+        if xhigh_on and not deadline_passed():
+            # xhigh plan stage (§6.4): ONE bounded planner call decides the
+            # retrieval decomposition; needed=False -> today's behavior.
+            tp = _ms()
+            plan = self._run_planner(query, warnings)
+            timings["plan_ms"] = int(_ms() - tp)
         if mode == "deep" and not deadline_passed():
-            # Probe already ran query #1; multi_part adds simple sub-splits,
-            # capped so the total stays <= config.deep_search_queries.
-            sub_queries = (
+            # Probe already ran query #1; multi_part adds simple sub-splits.
+            # xhigh: sub-searches = plan parts ∪ marker splits, deduped,
+            # <= config.deep_search_queries (§6.4); needed=False -> legacy.
+            marker_splits = (
                 split_query(query, max_parts=self.config.deep_search_queries - 1) if markers.get("multi_part") else []
             )
+            if plan is not None and getattr(plan, "needed", False):
+                sub_queries = _dedupe_texts(
+                    list(getattr(plan, "sub_questions", []) or []) + marker_splits, exclude=query
+                )[: max(0, self.config.deep_search_queries)]
+            else:
+                sub_queries = marker_splits
             for q in sub_queries:
                 if deadline_passed():
                     break
@@ -254,6 +344,16 @@ class Engine:
                 evidence, trust_by_url = self._trust_order(evidence, warnings)
         timings["extract_ms"] = int(_ms() - t)
 
+        # C2 local-first merge (both modes): non-ambiguous vn-geo entities
+        # prepend after trust ordering, then all ids renumber 1..N (local
+        # 1..k, web k+1..). Empty -> no-op; trust_by_url untouched. Optional
+        # work — skipped once the deadline is spent.
+        if not deadline_passed():
+            t = _ms()
+            evidence, local_hits = self._merge_local_evidence(query, evidence)
+            timings["local_ms"] = int(_ms() - t)
+            timings["local_hits"] = local_hits
+
         # 4) synthesis (streamed deltas; fallback text on failure).
         t = _ms()
         synth = self._get_synth()
@@ -280,6 +380,32 @@ class Engine:
                 answer = self._no_synth_answer(evidence)
                 yield {"type": "delta", "text": answer}
         timings["synth_ms"] = int(_ms() - t)
+
+        # 4b) xhigh deep path (§6.4): mechanical claim verification on draft 1,
+        #     then ONE conditional revise pass (re-search <=2 issue claims,
+        #     re-draft with a REVISION REQUIRED block, re-verify once — keep
+        #     draft 2 only on strict issue-count decrease). All bounded and
+        #     deadline-guarded; xhigh_enabled=False -> none of this runs.
+        confidence: str | None = None
+        gaps: list[str] = []
+        if xhigh_on and not deadline_passed():
+            tv = _ms()
+            try:
+                report = self._verify_claims(answer, evidence)
+            except Exception as exc:  # noqa: BLE001 — verification must not kill the query
+                warnings.append(f"claim verification failed ({exc})")
+                report = None
+            timings["verify_claims_ms"] = int(_ms() - tv)
+            if report is not None:
+                issues = _issue_texts(report)
+                if issues and int(getattr(self.config, "xhigh_revise_max", 1) or 0) > 0 and not deadline_passed():
+                    tr = _ms()
+                    answer, evidence, report = self._revise_pass(
+                        query, answer, evidence, report, issues, errors, warnings, deadline_passed
+                    )
+                    timings["revise_ms"] = int(_ms() - tr)
+                confidence = confidence_from(report)
+                gaps = _gap_texts(report)
 
         sources = [
             SourceRef(
@@ -312,6 +438,8 @@ class Engine:
                 reason=reason,
                 warnings=warnings,
                 timings_ms=timings,
+                confidence=confidence,
+                gaps=gaps,
             ),
         }
 
@@ -350,6 +478,133 @@ class Engine:
             except Exception:
                 return None
         return self._synth
+
+    def _get_planner_llm(self):
+        """Lazy ``llm.complete`` seam built from the synth config (§6.2).
+
+        Returns ``None`` when synthesis is unavailable — the planner then
+        takes the heuristic split path (surfaced as a warning upstream).
+        """
+        if self._planner_llm is None:
+            synth = self._get_synth()
+            if synth is not None and getattr(synth, "_client", None) is not None:
+                self._planner_llm = _SynthChatLLM(synth)
+        return self._planner_llm
+
+    def _run_planner(self, query: str, warnings: list[str]):
+        """Bounded plan stage; NEVER raises. Heuristic fallback warns (never silent)."""
+        try:
+            plan = plan_query(
+                query,
+                llm=self._get_planner_llm(),
+                max_subquestions=max(0, int(getattr(self.config, "xhigh_max_subquestions", 3) or 0)),
+            )
+        except Exception:  # noqa: BLE001 — the plan stage must never kill the query
+            return None
+        if plan is not None and getattr(plan, "source", "") == "heuristic":
+            warnings.append("planner model unavailable — used heuristic split")
+        return plan
+
+    def _merge_local_evidence(self, query: str, evidence: list[EvidenceItem]) -> tuple[list[EvidenceItem], int]:
+        """C2 hook: prepend non-ambiguous ``local_context`` hits; renumber 1..N.
+
+        Local items become ``EvidenceItem`` (``local://vn-geo/<id>`` url,
+        content as-is); ambiguous items are dropped per §6.4. Empty/missing
+        db -> ``(evidence, 0)`` no-op; local_context stays read-only.
+        """
+        try:
+            from gateway.core.local_context import build_local_evidence
+
+            items = [it for it in build_local_evidence(query) if not it.ambiguous]
+        except Exception:  # noqa: BLE001 — local evidence must never break the path
+            return evidence, 0
+        if not items:
+            return evidence, 0
+        merged = [EvidenceItem(id=0, title=it.title, url=it.url, content=it.content) for it in items]
+        merged.extend(evidence)
+        return _renumber_evidence(merged), len(items)
+
+    def _verify_claims(self, answer: str, evidence: list[EvidenceItem]):
+        """Mechanical claim verification on a draft (§6.3/§6.4)."""
+        return verify_claims(
+            extract_claims(answer),
+            evidence,
+            judge=getattr(self.config, "xhigh_judge", "off"),
+            overlap=float(getattr(self.config, "xhigh_claim_overlap", 0.15)),
+            llm=self._get_planner_llm() if getattr(self.config, "xhigh_judge", "off") != "off" else None,
+        )
+
+    def _revise_pass(
+        self,
+        query: str,
+        answer: str,
+        evidence: list[EvidenceItem],
+        report,
+        issues: list[str],
+        errors: list[str],
+        warnings: list[str],
+        deadline_passed,
+    ) -> tuple[str, list[EvidenceItem], object]:
+        """ONE bounded revise: targeted re-search -> re-draft -> re-verify.
+
+        (a) top <=2 issue claims get 1 search each; the top <=2 NEW urls are
+        extracted and appended (renumbered). (b) ONE re-draft via
+        ``synth.stream(..., revise=issues)``. (c) Re-verify once; draft 2 is
+        accepted only when the issue count strictly decreases — else draft 1
+        stays plus a warning (§6.4 frozen rule).
+        """
+        n_issues = len(issues)
+        re_items: list[SearchItem] = []
+        for claim_text in issues[:2]:
+            if deadline_passed():
+                break
+            re_items.extend(self._safe_search(claim_text, self.config.fast_max_results, errors, warnings))
+        have = {_normalize_url(ev.url) for ev in evidence}
+        new_urls: list[str] = []
+        for url in _dedupe_urls(re_items):
+            if _normalize_url(url) in have:
+                continue
+            new_urls.append(url)
+            if len(new_urls) >= 2:
+                break
+        if new_urls:
+            extra = self._extract_evidence(new_urls, re_items, errors, warnings)
+            if extra:
+                evidence = _renumber_evidence(list(evidence) + extra)
+        draft2 = self._redraft(query, evidence, issues, warnings)
+        try:
+            report2 = self._verify_claims(draft2, evidence)
+            issues2 = _issue_texts(report2)
+        except Exception:  # noqa: BLE001 — a failed re-verify keeps draft 1
+            report2, issues2 = report, issues
+        if draft2.strip() and len(issues2) < n_issues:
+            return draft2, evidence, report2
+        warnings.append(f"revision did not improve ({n_issues}→{len(issues2)}) — keeping draft 1")
+        return answer, evidence, report
+
+    def _redraft(self, query: str, evidence: list[EvidenceItem], issues: list[str], warnings: list[str]) -> str:
+        """ONE re-draft with a REVISION REQUIRED block; deltas consumed
+        silently — the event stream already served draft 1 and ``done``
+        carries whichever draft won."""
+        synth = self._get_synth()
+        if synth is None:
+            return ""
+        kwargs: dict = {"deep": True}
+        try:
+            params = inspect.signature(synth.stream).parameters
+        except Exception:  # noqa: BLE001 — odd callables just skip the kwarg
+            params = {}
+        if "revise" in params:
+            kwargs["revise"] = list(issues)
+        try:
+            parts = [piece for piece in synth.stream(query, evidence, **kwargs) if piece]
+        except Exception as exc:  # noqa: BLE001 — belt+braces, same as draft 1
+            warnings.append(f"revision stream raised: {exc}")
+            return ""
+        warning = getattr(synth, "last_warning", None)
+        if warning:
+            warnings.append(str(warning))
+        return "".join(parts)
 
     def _get_cache(self):
         if self._cache is None and not self._cache_failed:

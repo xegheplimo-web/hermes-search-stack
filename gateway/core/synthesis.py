@@ -81,7 +81,13 @@ def _now_line(now: datetime | None) -> str:
     return f"Current date: {moment.date().isoformat()} ({_WEEKDAYS[moment.weekday()]}), Asia/Ho_Chi_Minh, UTC+7."
 
 
-def _messages(query: str, evidence: list[EvidenceItem], deep: bool, now: datetime | None = None) -> list[dict]:
+def _messages(
+    query: str,
+    evidence: list[EvidenceItem],
+    deep: bool,
+    now: datetime | None = None,
+    revise: list[str] | None = None,
+) -> list[dict]:
     system = (
         _SYSTEM
         + f"\n- {_now_line(now)}\n"
@@ -89,6 +95,9 @@ def _messages(query: str, evidence: list[EvidenceItem], deep: bool, now: datetim
         + (_SYSTEM_DEEP_SUFFIX if deep else "\n- Keep the answer short: a few sentences.")
     )
     user = f"Question: {query}\n\nEvidence:\n{_evidence_block(evidence)}"
+    if revise:
+        block = "REVISION REQUIRED — fix/remove these claims:\n" + "\n".join(f"- {c}" for c in revise)
+        user = f"{block}\n\n{user}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
@@ -192,10 +201,13 @@ class Synthesizer:
         *,
         deep: bool = False,
         now: datetime | None = None,
+        revise: list[str] | None = None,
     ) -> Iterator[str]:
         """Yield answer pieces (SSE deltas); on failure yields the fallback text.
 
         ``now`` injects the 'Current date' block (tests); None = real clock.
+        ``revise`` (xhigh re-draft) prepends a "REVISION REQUIRED" block of
+        claims to fix/remove; default None leaves the prompt byte-identical.
         """
         self.last_warning = None
         if self._client is None:
@@ -208,7 +220,7 @@ class Synthesizer:
                 "/chat/completions",
                 json={
                     "model": self.model,
-                    "messages": _messages(query, evidence, deep, now),
+                    "messages": _messages(query, evidence, deep, now, revise),
                     "temperature": 0.2,
                     "stream": True,
                 },
