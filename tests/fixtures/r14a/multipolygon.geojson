@@ -1,0 +1,32 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"Ma": "TM", "TinhThanh": "Test Multi"},
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [0.0, 0.0],
+              [2.0, 0.0],
+              [2.0, 2.0],
+              [0.0, 2.0],
+              [0.0, 0.0]
+            ]
+          ],
+          [
+            [
+              [4.0, 4.0],
+              [6.0, 4.0],
+              [6.0, 6.0],
+              [4.0, 6.0],
+              [4.0, 4.0]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

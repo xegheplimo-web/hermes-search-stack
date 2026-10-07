@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"Ma": "TS", "TinhThanh": "Test Square"},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [105.0, 20.0],
+            [106.0, 20.0],
+            [106.0, 21.0],
+            [105.0, 21.0],
+            [105.0, 20.0]
+          ]
+        ]
+      }
+    }
+  ]
+}
