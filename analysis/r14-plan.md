@@ -71,6 +71,7 @@ admin_units (identity) ─► boundaries (polygon/bbox/centroid) ─► coverage
 
 ### R15 — Activation + query surface
 - Ward polygons (thanglequoc) + HQ densification tiers · Goong connector activation (key pending) · freshness gate (`ttl_class`) + gateway MCP local-first tool · targeted gmaps validation gate (decision: Sếp/TOS).
+- **Extended by `analysis/r15-plan.md` (2026-10-07):** answer-quality program (frontier-gap harness + xhigh pipeline + local-first answer path) added as the main R15 track; the spatial items above become the small carry-over batch.
 
 ### R16 — Coverage expansion + eval
 - Pilot 2–3 provinces end-to-end (plan → fetch → resolve → yield report) · golden-set eval (precision/recall, dedupe rate) · scheduled refresh wiring (cron) + staleness alerts.
