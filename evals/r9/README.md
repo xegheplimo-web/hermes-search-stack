@@ -162,7 +162,7 @@ git status --short
 # expected: only evals/r9/ additions, i.e.
 #  ?? evals/r9/
 
-## 6. Runner (`run_corpus.py`, R10-C)
+## 6. Runner (`run_corpus.py`, R10-C/R15-A)
 
 Runs the corpus against the read-only gateway and emits battery-compatible
 artifacts under `results/` so `scripts/scoreboard.py` math applies.
@@ -204,7 +204,10 @@ notes,error}], totals{pass,fail,total,elapsed_s}}`; corpus cases use
 `kind: "corpus"` plus `signals` + `judge_pending`) and
 `results/r10_corpus_<ts>.md` (per-difficulty / per-domain tables, latency
 p50/p90 via `nearest_rank_percentile`, failure / judge-pending / stale
-lists).
+lists). R15-A also emits an identical `results/r15_corpus_<ts>.json/.md`
+alias (read by the scoreboard gap scaffold) with v2 `aggregates`:
+`{severity_weighted_pass_rate, p50_latency_s, p95_latency_s,
+variant_consistency_avg}` plus per-case `severity` + `variant_consistency`.
 
 Checks are signals, not scores: `citations_present`, `sources_section_present`,
 `source_domains`, `required_fields` heuristics (`answer`, `citations`,
