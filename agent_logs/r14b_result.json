@@ -1,0 +1,36 @@
+{
+  "task": "r14-b — vn_geo coverage planner (deterministic polygon-clipped grid -> crawl jobs)",
+  "files_created": [
+    "vn_geo/coverage.py",
+    "tests/test_coverage.py",
+    "tests/fixtures/r14b/boundaries.json",
+    "tests/fixtures/r14b/square.geojson",
+    "tests/fixtures/r14b/square_hole.geojson",
+    "tests/fixtures/r14b/multipolygon.geojson",
+    "tests/fixtures/r14b/square_roundup.geojson",
+    "tests/fixtures/r14b/province_demo.geojson",
+    "agent_logs/r14b_result.json"
+  ],
+  "tests_summary": {
+    "new_test_file": "tests/test_coverage.py",
+    "new_tests": 18,
+    "new_tests_result": "18 passed",
+    "full_suite": "green — all dots to 100% (1 skipped), no failures/errors, run with a fresh LOCALAPPDATA so the machine-global Goong usage counter is not exhausted (see notes)",
+    "ruff": "ruff check . -> 'All checks passed!'; ruff format --check . -> '179 files already formatted'"
+  },
+  "acceptance_selfcheck": {
+    "1_pytest_and_ruff": "PASS — tests/test_coverage.py 18/18; full suite green; ruff check + ruff format --check clean.",
+    "2_determinism": "PASS — test_plan_deterministic: two plan() runs on the same input produce byte-identical json.dumps(cells).",
+    "3_centers_inside_polygon": "PASS — every kept cell center is re-verified inside via the point-in-polygon function (test_plan_square_expected_cells / hole / multipolygon / province_demo).",
+    "4_plan_province": "PARTIAL (boundaries layer not merged in this worktree) — exercised via a fixture province polygon + fake boundaries (same signatures). plan(db,'hai-phong',cell_km=2.0) -> cells_total=952, area_km2=3765.0, cell_km=2.0, implied density=25.286 cells/100km2, covered_km2=3808.0, coverage_fraction=1.0114 (grid cells counted at full 4 km2; a rectangle bbox over-covers its edges by <half a cell). Real code path: vn_geo.coverage imports vn_geo.boundaries.province_bbox/load_geometry/point_in_geometry (+lookup) and will run unchanged once r14-a is merged.",
+    "5_expand_jsonl_unique": "PASS — expand() emits job_id=f'{cell_id}|{cat}'; CLI 'expand' writes JSONL; test_cli_plan_stats_expand reads it back and asserts len(set(job_id))==len(jobs) (square fixture: 30 cells x 2 categories = 60 unique jobs)."
+  },
+  "notes": [
+    "GRID FROZEN per interfaces §2: origin=bbox min corner rounded to 3 dp; dlat=cell_km/111.32; dlon=cell_km/(111.32*cos(radians(bbox-center lat))); center=origin+((ix+0.5)*dlon,(iy+0.5)*dlat); cell_id=f'{area_code}:{ix}_{iy}'; keep iff CENTER passes point_in_geometry; sorted by (iy, ix).",
+    "Candidate index range = [floor((west-origin_lon)/dlon) .. floor((east-origin_lon)/dlon)] x same for lat; may include one extra edge cell whose center lies just past the bbox — it is outside the polygon (polygon subset of bbox) and is rejected, so coverage is never under-counted. Indices may be negative when the rounded origin nudges past the bbox edge (covered by test_plan_origin_rounds_up).",
+    "vn_geo/boundaries.py (r14-a) is NOT merged into this worktree; coverage.py imports it defensively (boundaries=None fallback) and raises VnGeoError with guidance if a plan is requested without it. Tests inject a fake boundaries module (FakeBoundaries) exposing the SAME signatures as province_bbox/load_geometry/point_in_geometry (+lookup for area name/area_km2). NO network anywhere (stdlib only).",
+    "ENVIRONMENTAL FLAKE (not caused by r14-b): tests/test_vn_geo_goong.py CLI tests use the machine-global usage-state file <LOCALAPPDATA>/hermes/vn-geo/goong_usage.json, which on this host is already at the daily cap {date:2026-10-07, count:1000}; those tests then fail with 'Goong daily limit 1000 reached'. Running the suite with a fresh LOCALAPPDATA makes the whole suite green. r14-b touches none of those files (git status shows only the 3 scoped additions).",
+    "CLI: python -m vn_geo.coverage plan|stats|expand (--db --area --cell-km --out --plan --categories). Exit 0 ok / 1 runtime / 2 usage-IO, mirroring vn_geo.overpass_poi conventions.",
+    "No files outside SCOPE were modified; data/vn-geo.db was never touched; nothing committed."
+  ]
+}
