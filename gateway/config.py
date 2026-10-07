@@ -154,6 +154,9 @@ class GatewayConfig:
     xhigh_revise_max: int = 1
     xhigh_judge: str = "off"  # "off" (mechanical) | "local" (one capped llm call)
     xhigh_claim_overlap: float = 0.15
+    ultra_enabled: bool = True  # deep path only; inert unless >=2 workstreams
+    ultra_max_workstreams: int = 4
+    pool_size: int = 4  # internal worker-pool concurrency; admission/healthz untouched
     hermes_python: str | None = None
     hermes_home: str | None = None
     repo_root: str = ""
@@ -187,6 +190,9 @@ class GatewayConfig:
             xhigh_revise_max=_env_int(f"{ENV_PREFIX}XHIGH_REVISE_MAX", 1),
             xhigh_judge=_env_str(f"{ENV_PREFIX}XHIGH_JUDGE", "off"),
             xhigh_claim_overlap=_env_float(f"{ENV_PREFIX}XHIGH_CLAIM_OVERLAP", 0.15),
+            ultra_enabled=_env_bool(f"{ENV_PREFIX}ULTRA_ENABLED", True),
+            ultra_max_workstreams=_env_int(f"{ENV_PREFIX}ULTRA_MAX_WORKSTREAMS", 4),
+            pool_size=_env_int(f"{ENV_PREFIX}POOL_SIZE", 4),
             hermes_python=_env_opt(f"{ENV_PREFIX}HERMES_PYTHON"),
             hermes_home=_env_opt(f"{ENV_PREFIX}HERMES_HOME"),
             repo_root=_env_str(f"{ENV_PREFIX}REPO_ROOT", str(_REPO_ROOT)),

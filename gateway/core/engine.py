@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING
 
 from gateway.core.claims import confidence_from, extract_claims, verify_claims
 from gateway.core.planner import plan_query
+from gateway.core.pool import BackendPool
 from gateway.core.router import build_signals, decide, query_markers, split_query
+from gateway.core.ultra import plan_ultra
 from gateway.protocols import EvidenceItem, ExtractItem, SearchItem
 from gateway.security.admission import ADMISSION_WAIT_MS
 
@@ -101,6 +103,17 @@ def _renumber_evidence(evidence: list[EvidenceItem]) -> list[EvidenceItem]:
     return [EvidenceItem(id=i + 1, title=ev.title, url=ev.url, content=ev.content) for i, ev in enumerate(evidence)]
 
 
+def _close_quietly(resource) -> None:
+    """``close()`` a backend/pool when it exposes one; never raises."""
+    close = getattr(resource, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception:  # noqa: BLE001 — teardown must never kill the flow
+        pass
+
+
 def _dedupe_texts(items: list[str], *, exclude: str = "") -> list[str]:
     """Casefold-deduped, trimmed, first-seen order; *exclude* (the query) dropped."""
     seen: set[str] = set()
@@ -174,9 +187,11 @@ class Engine:
         cache=None,
         metrics=None,
         planner_llm=None,
+        pool=None,
     ):
         self.config = config
         self._backend = backend
+        self._backend_injected = backend is not None
         self._synth = synth
         self._cache = cache
         self._cache_failed = False
@@ -186,6 +201,9 @@ class Engine:
         # Optional duck-typed planner/judge llm seam (additive); lazily built
         # from the synth client when not injected (tests pass fakes).
         self._planner_llm = planner_llm
+        # Optional injected BackendPool for the ultra path (additive §7.3);
+        # when None a fresh per-request pool is built over ``create_backend``.
+        self._pool = pool
 
     @property
     def backend(self) -> SearchBackend:
@@ -197,6 +215,17 @@ class Engine:
         ``backend=`` at construction to override.
         """
         return self._get_backend()
+
+    def close(self) -> None:
+        """Release the pool + primary backend when they expose ``close()`` (§7.3)."""
+        _close_quietly(self._pool)
+        _close_quietly(self._backend)
+
+    def __enter__(self) -> Engine:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     # ---------- frozen API ----------
 
@@ -297,6 +326,11 @@ class Engine:
         t = _ms()
         search_items: list[SearchItem] = list(probe)
         xhigh_on = mode == "deep" and bool(getattr(self.config, "xhigh_enabled", True))
+        ultra_n = 0  # >0 only when the ultra parallel path actually ran (§7.3)
+        ultra_t0 = 0.0
+        ultra_pool = None
+        ultra_owned = False
+        ultra_groups: list[list[SearchItem]] | None = None
         plan = None
         if xhigh_on and not deadline_passed():
             # xhigh plan stage (§6.4): ONE bounded planner call decides the
@@ -317,17 +351,42 @@ class Engine:
                 )[: max(0, self.config.deep_search_queries)]
             else:
                 sub_queries = marker_splits
-            for q in sub_queries:
-                if deadline_passed():
-                    break
-                search_items.extend(self._safe_search(q, self.config.fast_max_results, errors, warnings))
+            # R15-B2 ultra (§7.3): the SAME sub_queries B1 computed run via
+            # the worker pool when separable — execution changes, the set does
+            # not. Pool failure degrades to the serial loop below.
+            ultra_plan = self._ultra_plan(sub_queries, deadline_passed)
+            if ultra_plan is not None:
+                ultra_t0 = _ms()
+                try:
+                    ultra_pool, ultra_owned = self._get_ultra_pool(deadline_passed)
+                    ultra_groups = self._ultra_sub_searches(ultra_pool, sub_queries, deadline_passed, errors, warnings)
+                except Exception:  # noqa: BLE001 — pool cannot run at all
+                    ultra_groups = None
+                if ultra_groups is not None:
+                    for group in ultra_groups:
+                        search_items.extend(group)
+                    ultra_n = int(getattr(ultra_plan, "n", 0) or 0)
+                else:
+                    _close_quietly(ultra_pool if ultra_owned else None)
+                    ultra_pool, ultra_owned = None, False
+                    warnings.append("ultra pool unavailable — serial fallback")
+            if ultra_n == 0:
+                for q in sub_queries:
+                    if deadline_passed():
+                        break
+                    search_items.extend(self._safe_search(q, self.config.fast_max_results, errors, warnings))
         if deadline_passed():
             cap = self.config.deep_extract if mode == "deep" else self.config.fast_extract
             evidence = _search_items_to_evidence(search_items[: max(0, cap)])
             trust_by_url = {}
         elif mode == "deep":
             urls = _dedupe_urls(search_items)[: max(0, self.config.deep_extract)]
-            evidence = self._extract_evidence(urls, search_items, errors, warnings)
+            if ultra_n and ultra_pool is not None and ultra_groups is not None:
+                evidence = self._ultra_extract(
+                    ultra_pool, ultra_n, ultra_groups, urls, search_items, errors, warnings, deadline_passed
+                )
+            else:
+                evidence = self._extract_evidence(urls, search_items, errors, warnings)
             evidence, trust_by_url = self._trust_order(evidence, warnings)
             if not evidence:
                 evidence = _search_items_to_evidence(search_items[: self.config.deep_extract])
@@ -342,6 +401,10 @@ class Engine:
             if not evidence:
                 evidence = _search_items_to_evidence(search_items[: self.config.fast_extract])
                 evidence, trust_by_url = self._trust_order(evidence, warnings)
+        _close_quietly(ultra_pool if ultra_owned else None)
+        if ultra_n:
+            timings["ultra_ms"] = int(_ms() - ultra_t0)
+            timings["ultra_n"] = ultra_n
         timings["extract_ms"] = int(_ms() - t)
 
         # C2 local-first merge (both modes): non-ambiguous vn-geo entities
@@ -505,6 +568,141 @@ class Engine:
             warnings.append("planner model unavailable — used heuristic split")
         return plan
 
+    # ---------- ultra worker-pool path (§7.3) ----------
+
+    def _ultra_plan(self, sub_queries: list[str], deadline_passed):
+        """``UltraPlan`` when ultra should parallelize this retrieval, else None.
+
+        Gates (frozen §7.3): ``ultra_enabled`` AND >=2 sub-queries AND budget
+        left — ``plan_ultra`` itself stays inert below n=2 workstreams.
+        """
+        if not bool(getattr(self.config, "ultra_enabled", True)):
+            return None
+        if len(sub_queries) < 2 or deadline_passed():
+            return None
+        try:
+            plan = plan_ultra(
+                list(sub_queries),
+                max_workstreams=int(getattr(self.config, "ultra_max_workstreams", 4) or 0),
+            )
+        except Exception:  # noqa: BLE001 — a partition bug must not kill the query
+            return None
+        return plan if int(getattr(plan, "n", 0) or 0) >= 2 else None
+
+    def _get_ultra_pool(self, deadline_passed) -> tuple[object, bool]:
+        """``(pool, owned)`` — the injected pool reused as-is, else a fresh
+        per-request ``BackendPool`` the caller closes after retrieval.
+
+        Worker factory (§7.5 — pool only consumes ``create_backend``): the
+        engine-built backend means workers get FRESH instances (the bridge
+        serializes per instance, so sharing would not parallelize). An
+        injected backend cannot be cloned — a single worker shares it,
+        which keeps observable calls byte-identical to the serial B1 path.
+        """
+        if self._pool is not None:
+            return self._pool, False
+        if self._backend_injected:
+            return BackendPool(self._get_backend, size=1, deadline_passed=deadline_passed), True
+        size = int(getattr(self.config, "pool_size", 4) or 4)
+        return BackendPool(self._new_backend, size=size, deadline_passed=deadline_passed), True
+
+    def _new_backend(self):
+        """Fresh backend instance for a pool worker (``create_backend``)."""
+        from gateway.backends import create_backend
+
+        return create_backend(self.config)
+
+    def _ultra_sub_searches(
+        self,
+        pool,
+        sub_queries: list[str],
+        deadline_passed,
+        errors: list[str],
+        warnings: list[str],
+    ) -> list[list[SearchItem]]:
+        """Parallel sub-searches via ``pool.map_search`` (§7.3).
+
+        Returns per-query item groups in INPUT order — the concatenation is
+        the same list B1's serial loop produced. Infra-failed ops are
+        retried ONCE serially on the primary backend; ``"deadline"`` skips
+        are never retried.
+        """
+        results = pool.map_search(list(sub_queries), max_results=self.config.fast_max_results)
+        groups: list[list[SearchItem] | None] = []
+        retry_idx: list[int] = []
+        for i in range(len(sub_queries)):
+            _q, items, err = results[i] if i < len(results) else (sub_queries[i], None, "missing pool result")
+            if items is not None:
+                groups.append(list(items))
+            elif err == "deadline":
+                groups.append([])
+            else:
+                groups.append(None)
+                retry_idx.append(i)
+        retried = 0
+        for i in retry_idx:
+            if deadline_passed():
+                groups[i] = []
+                continue
+            retried += 1
+            groups[i] = self._safe_search(sub_queries[i], self.config.fast_max_results, errors, warnings)
+        if retried:
+            warnings.append(f"ultra: {retried} op(s) retried serially")
+        return [list(group or []) for group in groups]
+
+    def _ultra_extract(
+        self,
+        pool,
+        n_workstreams: int,
+        ultra_groups: list[list[SearchItem]],
+        urls: list[str],
+        search_items: list[SearchItem],
+        errors: list[str],
+        warnings: list[str],
+        deadline_passed,
+    ) -> list[EvidenceItem]:
+        """Parallel extraction, one batch per workstream (§7.3).
+
+        The capped URL list is IDENTICAL to B1's single extract call; it is
+        partitioned by which workstream's hits produced each URL (earliest
+        wins; probe-only URLs lead the merge), fetched via
+        ``pool.map_extract`` and merged back in workstream order.
+        """
+        if not urls:
+            return []
+        n_streams = max(1, n_workstreams)
+        owners: list[set[str]] = [set() for _ in range(n_streams)]
+        for i, group in enumerate(ultra_groups):
+            owners[i % n_streams].update(_normalize_url(it.url) for it in group if getattr(it, "url", ""))
+        stream_batches: list[list[str]] = [[] for _ in range(n_streams)]
+        lead: list[str] = []
+        for url in urls:
+            key = _normalize_url(url)
+            for w, owned in enumerate(owners):
+                if key in owned:
+                    stream_batches[w].append(url)
+                    break
+            else:
+                lead.append(url)
+        batches = ([lead] if lead else []) + [b for b in stream_batches if b]
+        try:
+            results = pool.map_extract(batches, char_limit=15000)
+        except Exception:  # noqa: BLE001 — pool cannot run -> serial B1 extract
+            warnings.append("ultra pool unavailable — serial fallback")
+            return self._extract_evidence(urls, search_items, errors, warnings)
+        merged: list[ExtractItem] = []
+        retried = 0
+        for i, batch in enumerate(batches):
+            res = results[i] if i < len(results) else None
+            if res is not None:
+                merged.extend(res)
+            elif not deadline_passed():
+                retried += 1
+                merged.extend(self._extract_items(batch, errors, warnings))
+        if retried:
+            warnings.append(f"ultra: {retried} op(s) retried serially")
+        return self._items_to_evidence(merged, search_items, errors)
+
     def _merge_local_evidence(self, query: str, evidence: list[EvidenceItem]) -> tuple[list[EvidenceItem], int]:
         """C2 hook: prepend non-ambiguous ``local_context`` hits; renumber 1..N.
 
@@ -656,15 +854,33 @@ class Engine:
         warnings: list[str],
     ) -> list[EvidenceItem]:
         """Extract urls -> numbered evidence, titles back-filled from search."""
+        return self._items_to_evidence(self._extract_items(urls, errors, warnings), search_items, errors)
+
+    def _extract_items(
+        self,
+        urls: list[str],
+        errors: list[str],
+        warnings: list[str],
+    ) -> list[ExtractItem]:
+        """Raw ``backend.extract`` on the primary backend — failure is a
+        warning + ``[]``, never a raise (B1 serial semantics)."""
         if not urls:
             return []
         try:
-            extracted = self._get_backend().extract(urls, char_limit=15000)
+            return self._get_backend().extract(urls, char_limit=15000)
         except Exception as exc:  # noqa: BLE001
             msg = f"{type(exc).__name__}: {exc}"
             errors.append(msg)
             warnings.append(f"extract failed: {msg}")
             return []
+
+    def _items_to_evidence(
+        self,
+        extracted: list[ExtractItem],
+        search_items: list[SearchItem],
+        errors: list[str],
+    ) -> list[EvidenceItem]:
+        """``ExtractItem`` -> numbered ``EvidenceItem``; titles back-filled."""
         titles = {_normalize_url(it.url): it.title for it in search_items}
         evidence: list[EvidenceItem] = []
         for item in extracted:
