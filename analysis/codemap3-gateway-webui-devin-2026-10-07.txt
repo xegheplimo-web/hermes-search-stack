@@ -1,0 +1,605 @@
+Skip to main content
+Hermes Search Stack: Gateway Engine (xhigh/ultra), Web UI, VN Local Data
+Sharing
+Only me
+Open in Devin Desktop
+Traces
+Diagram
+Hermes Search Stack: Gateway Engine (xhigh/ultra), Web UI, VN Local Data
+
+Three-layer architecture: Gateway (:8787) handles deep research with semantic planning, claim verification, and parallel ultra execution; Web UI (Next.js) streams chat over /api/chat with rich tool rendering; VN geo layer provides local-first business evidence. Key entry points: gateway admission [1a], deep query orchestration [2a-2g], xhigh claim verification [3a-3e], web chat streaming [4a-4d], places tool rendering [5a-5f], MCP tool binding [6a-6e].
+
+1
+Gateway HTTP Request → Admission Control → Engine Execution
+
+Gateway app.py middleware layer; shows how requests flow through admission gates before reaching the engine. See guide
+
+AI generated guide
+Motivation
+
+The gateway serves expensive research queries that can take 10-180 seconds to complete. Without admission control, a burst of concurrent requests would spawn unbounded backend workers, exhausting memory and causing cascading failures. The system needs bounded resource consumption while still allowing reasonable queueing for legitimate traffic spikes.
+
+Details
+Admission Gate Architecture
+
+The gateway protects expensive endpoints [1a] using a bounded semaphore + capped queue pattern. Only /v1/chat/completions requires admission control—health checks and metrics endpoints remain unrestricted so monitoring stays responsive under load.
+
+Three-Tier Capacity Model
+
+When a request arrives at Admission.acquire() [1b]:
+
+Fast path: If in_flight < max_inflight (default 4) and no queue, grant immediately
+Queue path: If at capacity but queued < queue_cap (default 16), park on a condition variable with timeout
+Reject path: If queued >= queue_cap [1c], raise AdmissionRejected immediately, which the app middleware converts to 503 + Retry-After: 1
+
+This gives total capacity of 20 concurrent requests (4 active + 16 waiting) before rejecting.
+
+Wait Time Accounting
+
+Queue wait is recorded in a context variable [1d] so the engine can include it in timings_ms. This ensures admission overhead is visible in observability metrics, not hidden from the request budget.
+
+Request Flow
+
+After admission, the OpenAI-compatible endpoint extracts the last user message [1e] as the query (documented limitation: earlier messages are ignored). The query then flows to Engine.run_iter() [1f], which emits structured events (route → delta → done) for streaming responses.
+
+Why Not Rate Limiting Alone?
+
+Rate limiting controls request frequency; admission control bounds concurrent execution. A rate limiter would still allow 20 requests/second to pile up if each takes 60 seconds, creating 1200 concurrent operations. Admission control caps this at 20 total, preventing resource exhaustion.
+
+FastAPI Application (app.py)
+1a
+Expensive endpoints gated
+app.py:48
+_ADMISSION_PATHS = frozenset({"/v1/chat/completions"})
+Middleware: admission check
+1b
+Admission slot acquisition
+admission.py:85
+def acquire(self, timeout: float | None = None) -> float:
+1c
+Queue capacity check
+admission.py:101
+if self._queued >= self.queue_cap:
+Wait or reject (503)
+1d
+Wait time tracking
+admission.py:30
+ADMISSION_WAIT_MS: ContextVar[float] = ContextVar("hermes_gateway_admission_wait_ms", default=0.0)
+Route to endpoint
+/v1/chat/completions
+ChatCompletionsRouter
+1e
+Extract query from messages
+chat_completions.py:53
+def _last_user_query(messages: list[ChatMessage]) -> str | None:
+1f
+Engine event stream
+engine.py:4
+``Engine.run_iter`` emits ``{"type":"route"}`` -> ``{"type":"delta"}`` ->
+Response: SSE stream or JSON
+2
+Deep Query → Semantic Planner → Ultra Parallel Execution → Worker Pool
+
+Gateway core orchestration (R15-B1/B2); shows xhigh pipeline with semantic planning and ultra mode parallel retrieval. See guide
+
+AI generated guide
+Motivation
+
+Simple search queries can be answered with a single retrieval pass, but complex research questions often require decomposition into sub-questions, parallel retrieval across multiple sources, and synthesis of diverse evidence. The gateway's xhigh/ultra orchestration (R15-B1/B2) solves this by adding two capabilities:
+
+Semantic planning: An LLM decomposes queries like "compare tax policies across three countries" into bounded sub-questions before retrieval [2b, 2c]
+Parallel execution: Ultra mode distributes sub-queries across a worker pool (≤4 workers) for concurrent retrieval, dramatically reducing p95 latency [2d, 2e]
+
+Without this, the engine would either fail on multi-hop questions or serialize all retrievals, making deep research prohibitively slow.
+
+Details
+Query Planning Pipeline
+
+The router determines whether a query needs deep processing [2a]. For deep queries, plan_query() sends a strict-JSON prompt to the synthesis LLM asking for sub-questions [2b]. The planner makes one capped completion call (max 400 tokens) [2c] and validates the response schema. If the model fails or returns invalid JSON, it falls back to heuristic splitting — the system never crashes on planner errors.
+
+The planner returns a Plan with sub_questions[] and a multi_hop flag [gateway/core/planner.py:116]. Sub-questions are sanitized: 3-200 chars each, deduplicated, capped at max_subquestions=3, and the original query is excluded to prevent echo.
+
+Ultra Mode Parallelization
+
+Once sub-questions exist, plan_ultra() performs round-robin partitioning into workstreams [2d]. If there are N≥2 sub-queries, they're split across min(N, 4) streams [gateway/core/ultra.py:41]. The function is pure — it never calls models or backends, just partitions a list.
+
+The BackendPool executes the workstreams concurrently [2e]. Each worker thread lazily builds its backend once on first use and caches it for the pool's lifetime [2f] — this is critical because the primary backend (HermesBridge) spawns a subprocess, and rebuilding per-call would be prohibitively expensive (§7.1a fix).
+
+Workers claim ops from a shared queue and execute them in parallel. Per-op failures are isolated [2g]: if one retrieval fails, others continue and the map returns partial results. The pool respects an optional deadline hook — ops that start after the deadline return "deadline" without execution.
+
+Why Worker Pool is Necessary
+
+The primary backend serializes all operations on a single worker lock (hermes_bridge.py). Real concurrency requires distinct backend instances, which is why ultra mode builds a pool of workers, each with its own backend. This architectural constraint is why R15-B2 (ultra) strictly depends on R15-D (reliability/concurrency foundation).
+
+Gateway Router (decides depth)
+2a
+Router imports planner
+router.py:27
+from gateway.core.planner import plan_query
+Semantic Planner (R15-B1)
+2b
+Semantic planning entry
+planner.py:96
+def plan_query(query: str, *, llm=None, max_subquestions: int = 3) -> Plan:
+2c
+Model planner call
+planner.py:110
+raw = llm.complete(_prompt(query, max_subquestions), max_tokens=_PLAN_MAX_TOKENS)
+returns Plan{sub_questions, multi_hop}
+Ultra Mode Partitioner (R15-B2)
+2d
+Ultra mode partitioning
+ultra.py:25
+def plan_ultra(sub_queries: list[str], *, max_workstreams: int = 4) -> UltraPlan:
+returns UltraPlan{workstreams[]}
+Backend Worker Pool (parallel execution)
+2e
+Parallel search execution
+pool.py:59
+def map_search(self, queries: list[str], *, max_results: int) -> list[tuple[str, list[SearchItem] | None, str]]:
+per-worker lazy backend build
+2f
+Lazy backend construction
+pool.py:127
+backend = self._factory()
+2g
+Per-op isolation
+pool.py:135
+results[idx] = (invoke(backend, op), "")
+results[idx] = invoke(backend, op)
+3
+Xhigh Pipeline → Claim Extraction → Mechanical Verification → Confidence Scoring
+
+Gateway core claims verification (R15-B1); shows post-draft claim checking and confidence assessment. See guide
+
+AI generated guide
+Motivation
+
+The xhigh claim verification pipeline solves a critical problem for AI-generated research answers: how do you know if the answer is actually supported by its cited sources? Without verification, the system could confidently cite sources that don't back up what it's saying, or make factual claims without any citations at all.
+
+This pipeline implements post-draft verification as part of the R15-B1 "xhigh mode" enhancement. After the synthesis model generates an answer, the system automatically extracts every claim, checks whether each claim is properly cited and supported by evidence, and assigns a confidence score (high/medium/low) to the entire answer [3e]. This lets the system know when to trigger a second pass or flag gaps to the user.
+
+Details
+Claim Extraction
+
+The pipeline starts by parsing the generated answer markdown into individual claims [3a]. Each sentence becomes a Claim object containing the text and a list of citation IDs parsed from [n] markers [3a]. The extractor intelligently excludes the trailing ## Sources section since that's just the citation index, not prose to verify.
+
+Mechanical Verification
+
+By default, verification runs in mechanical mode (no LLM judge) [3b]. For each claim, _mechanical_status() [3c] performs three checks:
+
+Citation presence: Claims with digits/dates but no [n] markers are flagged as uncited_factual
+Citation validity: If any cited [n] ID doesn't exist in the evidence list, the claim is unsupported [3c]
+Content overlap: The claim's content tokens must overlap with the cited evidence by at least 15% (configurable overlap parameter) [3c]
+
+The token overlap check uses a simple but effective heuristic: extract tokens ≥4 characters from both the claim and all its cited evidence, then verify sufficient intersection. This catches cases where citations exist but don't actually support the claim.
+
+Contradiction Detection
+
+The system also runs a cheap contradiction check [3d] that looks for claims citing multiple evidence items whose digit sets differ [3d]. For example, if one source says "20% growth" and another says "30% growth", and a claim cites both, this gets flagged as a possible contradiction.
+
+Confidence Scoring
+
+Finally, confidence_from() [3e] aggregates the verification results into a single confidence level:
+
+High: Zero issues and ≥90% coverage
+Medium: ≤2 issues or ≥60% coverage
+Low: Everything else
+
+The coverage metric is the ratio of supported claims to total verifiable claims (supported + unsupported + uncited_factual). This confidence score feeds back into the engine's decision to accept the answer or trigger a conditional second pass with deeper retrieval.
+
+Optional LLM Judge
+
+While mechanical verification is the default, the system supports an optional judge="local" mode that replaces mechanical verdicts with a single LLM call for semantic entailment checking. This is fail-open: any judge failure results in all verdicts becoming "unknown" rather than fabricating negatives.
+
+Engine.run() deep path
+Draft synthesis complete
+3a
+Sentence-level claim extraction
+claims.py:54
+def extract_claims(answer_md: str) -> list[Claim]:
+Sentence split & [n] parse
+Returns list[Claim]
+3b
+Claim verification entry
+claims.py:155
+def verify_claims(
+judge="off" (mechanical)
+3c
+Token overlap verification
+claims.py:94
+def _mechanical_status(claim: Claim, by_id: dict[int, str], overlap: float) -> str:
+Citation ID check
+Token overlap ≥0.15
+Returns status string
+3d
+Contradiction detection
+claims.py:109
+def _contradicted(claim: Claim, by_id: dict[int, str]) -> bool:
+Digit set comparison
+Returns ClaimReport
+3e
+Confidence scoring
+claims.py:186
+def confidence_from(report: ClaimReport) -> str:
+Count issues
+Check coverage ≥0.9
+Returns high/medium/low
+4
+Web UI Chat → /api/chat Proxy → Backend Stream → SSE Transform
+
+Web frontend (Next.js); shows how browser chat messages flow through API route to backend with flavor-specific transforms. See guide
+
+AI generated guide
+Motivation
+
+The web UI needs to provide a ChatGPT-style streaming chat experience while supporting two different backend architectures: the lightweight gateway at :8787 and the full Hermes agent API at :8642. The challenge is that these backends have different streaming protocols—the gateway speaks the client contract directly, while Hermes emits named SSE events that need transformation. The solution is a flavor-aware proxy [4b] that adapts both backends to a unified client interface.
+
+Details
+Browser to API Route
+
+The browser uses a custom ChatModelAdapter [4a] built for @assistant-ui/react that POSTs chat messages to /api/chat. This adapter owns SSE parsing and yields cumulative content snapshots for progressive rendering, keeping the protocol translation client-side rather than in the proxy.
+
+API Route Proxy Layer
+
+The Next.js route handler [4b] acts as a pure pass-through proxy for the gateway flavor—it forwards {model, messages, stream: true} to HERMES_BACKEND_URL and pipes the SSE response back chunk-for-chunk with no buffering. The backend key (HERMES_BACKEND_KEY) stays server-side only, never exposed to the browser.
+
+Hermes API Flavor Transform
+
+When HERMES_BACKEND_FLAVOR=hermes_api, the proxy applies SSE re-framing [4c]. Named events like event: hermes.tool.progress with status: running become {type:"tool", state:"running"} frames. When a tool completes, the proxy fetches the session transcript [4d] via GET /api/sessions/web-{threadId}/messages to retrieve the tool result (which isn't streamed), retrying ~3× every ~350ms since transcript writes lag the stream. This allows the same frontend to work with both backend architectures.
+
+Backend Targets
+
+The system supports two production paths: the local gateway at :8787 provides direct OpenAI-compatible streaming, while Hermes api_server at :8642 provides richer session management and named event streams. The flavor system makes this a configuration-only change—no code edits required to switch backends.
+
+Browser Layer
+4a
+Custom adapter for assistant-ui
+hermes-adapter.ts:1
+// ChatModelAdapter implementation
+POST /api/chat
+Next.js API Layer
+4b
+Next.js API route handler
+route.ts:1
+// SSE proxy route
+Forward to HERMES_BACKEND_URL
+Flavor-specific transform
+gateway: passthrough
+4c
+SSE event re-framing
+sse-transform.ts:1
+// hermes_api flavor transform
+event: hermes.tool.progress
+status: completed
+GET /api/sessions/.../messages
+4d
+Tool result fetching
+README.md:63
+finds the latest `role:"tool"` message with a matching `tool_call_id`, and
+Backend Layer
+Gateway :8787 (direct stream)
+Hermes api_server :8642
+5
+Places Tool Event → PlacesToolUI → MapLibre Rendering → Card-Marker Sync
+
+Web frontend tool rendering (R16); shows how hermes_places results become interactive map UI. See guide
+
+AI generated guide
+Motivation
+
+The web UI needs to render rich, interactive visualizations for tool results—specifically, when the hermes_places tool returns Vietnamese business/place data, users should see both a list of place cards and an interactive map with synchronized markers. The challenge is bridging the gap between SSE event streams from the backend and React components that can render MapLibre maps with bidirectional card-marker synchronization.
+
+Details
+Event Flow Architecture
+
+The system uses a custom event envelope [5a] that wraps tool results in a structured format: {type:"tool", state:"done", result:{places[], viewport}}. This allows the backend to send rich payloads beyond plain text, including geographic data like coordinates and bounding boxes.
+
+The ChatModelAdapter [5b] sits between the SSE stream and assistant-ui's rendering primitives. It parses these event frames and maps them onto assistant-ui's native part types—tool events become tool-call parts with the full result payload attached. This design keeps the /api/chat proxy dumb (just pipes bytes) while letting the client-side adapter handle protocol translation.
+
+Component Rendering
+
+The PlacesToolUI component [5c] is registered in the parts router via tools.by_name["hermes_places"]. When assistant-ui encounters a tool-call part with that name, it renders this component, passing the result payload as props.
+
+The component splits into two panels: left shows place cards (name, rating, address, hours), right shows the map. The map itself is a dynamic import with ssr: false because MapLibre GL requires browser APIs—it can't render on the server.
+
+Map Synchronization
+
+The PlacesMap component [5d] implements bidirectional sync [5e]: clicking a card triggers flyTo() on the map and shows a popup; clicking a marker highlights the corresponding card and scrolls it into view. The initial viewport comes from payload.viewport.bbox, which the backend calculates from the place coordinates.
+
+Graceful degradation [5f] is built in: places without lat/lon don't get markers, and if no place has coordinates, the entire map block is omitted—the list renders standalone. This handles the reality that not all Vietnamese business data has been geocoded yet.
+
+Data Schema
+
+The event schema [5a] defines the contract between backend and frontend. Each place includes name, lat, lng, rating, review_count, category, address, phone, website, hours, and optional thumbnail. The viewport object provides {center: [lng, lat], bbox: [[west, south], [east, north]]} for initial map framing.
+
+Browser: User receives chat response
+SSE stream parsing
+5a
+Tool event schema
+events.ts:1
+// Event envelope types
+Adapter processes events
+5b
+Event-to-part mapping
+hermes-adapter.ts:1
+// Maps events to assistant-ui parts
+React Component Tree
+MessagePrimitive.Parts router
+tools.by_name["hermes_places"]
+5c
+Places renderer entry
+places-tool-ui.tsx:1
+// PlacesToolUI component
+Left panel: Place cards
+(name, ★rating, address...)
+Right panel: Map container
+Dynamic import (ssr:false)
+5d
+Map rendering (client-only)
+places-map.tsx:1
+// MapLibre map component
+fitBounds(viewport)
+5e
+Bidirectional sync
+README.md:131
+Card ↔ marker sync both ways; `fitBounds` from `payload.viewport`; card
+5f
+Graceful degradation
+README.md:133
+Places without lat/lon simply don't get markers; if *no* place has coords
+Data Flow
+{type:"tool", result:{places[], viewport}}
+places[]: name/lat/lng/rating/...
+viewport: {center, bbox}
+6
+MCP hermes_places Call → query_places → VN Geo DB → Enriched Results
+
+Gateway MCP tools + VN geo data layer (R16-W1); shows how place queries retrieve local Vietnamese business data. See guide
+
+AI generated guide
+Motivation
+
+The Hermes search stack needs to answer queries about Vietnamese businesses and places with structured data like addresses, phone numbers, and map coordinates. Generic web search can't reliably extract this structured information, and external APIs (like Google Places) require paid keys or have rate limits.
+
+The solution: a dedicated MCP tool (hermes_places) that queries a local SQLite database of Vietnamese place data, returning lat/lon coordinates and enriched metadata that the web UI can render as interactive maps [6a].
+
+Details
+Tool Registration
+
+The gateway exposes 7 MCP tools [6a], with hermes_places added in R16 as the newest. Each tool has a frozen parameter contract [6b] defining required and optional arguments. For hermes_places: query is required, while area, category, min_rating, and count are optional filters.
+
+Data Flow
+
+When called, hermes_places [6b] delegates directly to vn_geo.places.query_places() [6c], which performs FTS (full-text search) against data/places.db [6e]. This database currently contains 8 pilot rows from the Yên Dũng area—a small but real dataset for testing the full stack.
+
+The query function returns enriched results including source_id, phone, website, hours, source_url, and thumbnail [6c]. Crucially, it also returns a viewport object with center coordinates and bounding box, enabling the web UI to automatically fit the map view to the results.
+
+Separation of Concerns
+
+The codebase distinguishes between 5 kinds of Vietnamese data [6d]: admin units, places, enterprises, news, and business entities. The older hermes_vn tool handles generic queries across these kinds via SearchStore, while hermes_places is purpose-built for lat/lon place queries that need map rendering.
+
+This separation keeps the place-specific logic (coordinate handling, viewport calculation, map-ready formatting) isolated from the general-purpose VN data queries.
+
+Gateway MCP Server
+6a
+7th MCP tool
+tools.py:30
+"hermes_places",
+6b
+Tool parameter contract
+tools.py:48
+"hermes_places": {
+make_tools() binding
+hermes_places(query, area, ...)
+vn_geo.places.query_places()
+VN Geo Places Module
+6c
+Places query entry
+places.py:1
+# query_places implementation
+FTS search on places.db
+Enrichment: phone, website, hours
+Return {places[], viewport}
+Data source
+6e
+Local places storage
+places.db:1
+# Pilot places database
+MCP Tool Context
+6d
+VN data kinds
+tools.py:54
+_VN_KINDS: tuple[str, ...] = ("admin", "places", "enterprises", "news", "business")
+("admin", "places", "enterprises",
+hermes_vn vs hermes_places split
+hermes_vn: generic SearchStore query
+hermes_places: dedicated lat/lon tool
+7
+Local-First VN Business → local_context → vn-geo.db → Evidence Scoring
+
+Gateway local context layer (R15-C); shows how VN business entities become local evidence before web search. See guide
+
+AI generated guide
+Motivation
+
+Hermes search stack cần trả lời câu hỏi về doanh nghiệp Việt Nam trước khi tìm kiếm web. Khi user hỏi "công ty ABC ở Hải Phòng", hệ thống phải check local database trước — nhanh hơn, chính xác hơn, và không tốn API calls. Đây là local-first evidence layer [7a]: query vào → score entities → trả về top 8 kết quả với confidence/authority metadata.
+
+Problem cụ thể: Cùng tên "CÔNG TY ABC" có thể là nhiều doanh nghiệp khác nhau ở các địa chỉ khác nhau. System không được merge chúng thành một entity — phải giữ riêng và flag ambiguous=True [7d].
+
+Details
+Database Access
+
+build_local_evidence() [7a] mở data/vn-geo.db ở read-only mode [7b] qua SQLite URI file:...?mode=ro&immutable=1. Immutable flag ngăn tạo WAL files khi đọc — zero write trace. Query documents_current view để lấy entity metadata [7c].
+
+Scoring Algorithm
+
+Mỗi entity được score additive dựa trên query tokens [7c]:
+
++0.4 nếu name match
++0.2 nếu area (tỉnh/huyện) match
++0.2 nếu address match
++0.2 nếu có coordinates
+
+Threshold mặc định 0.5 — entities dưới ngưỡng bị loại. Token matching dùng fold_text() (đ→d, strip diacritics, casefold) để handle tiếng Việt.
+
+Ambiguity Guard
+
+_mark_ambiguous() [7d] detect entities có cùng folded name nhưng khác normalized address. Những entities này được flag ambiguous=True và không bao giờ được merge. Đây là guard cho COKYVINA-class clusters — nhiều chi nhánh cùng tên công ty.
+
+Authority Classification
+
+_authority() [7e] phân loại source:
+
+"registry" nếu từ masothue (tax registry) hoặc CKAN (government open data)
+"aggregator" cho các source khác
+
+Registry sources có độ tin cậy cao hơn trong answer synthesis.
+
+Output
+
+Trả về list LocalEvidence (max 8 items), mỗi item có:
+
+id: local:vn-geo:<entity_id>
+url: local://vn-geo/<entity_id>
+content: "name · area · address · category · status · sources"
+confidence: 0.0–1.0 score
+authority: "registry" | "aggregator"
+ambiguous: boolean flag
+
+List này được prepend vào evidence pool trước web search results — local-first retrieval.
+
+Engine calls local evidence builder
+7a
+Local evidence builder
+local_context.py:240
+def build_local_evidence(
+resolve_db_path()
+data/vn-geo.db resolution
+7b
+Read-only DB connection
+local_context.py:95
+def _connect_ro(path: Path) -> sqlite3.Connection:
+file:...?mode=ro&immutable=1 URI
+_load_entity_metas()
+SELECT meta FROM documents_current
+_scored_entities() scoring loop
+7c
+Additive confidence scoring
+local_context.py:156
+def _confidence(meta: dict, query_tokens: set[str]) -> float:
++0.4 name match
++0.2 area match
++0.2 address match
++0.2 coords present
+threshold filter (min 0.5)
+7d
+Ambiguity guard
+local_context.py:175
+def _mark_ambiguous(items: list[_ScoredEntity]) -> None:
+same name + diff address → flag
+Build LocalEvidence records
+7e
+Authority classification
+local_context.py:216
+def _authority(meta: dict) -> str:
+masothue/CKAN → "registry"
+others → "aggregator"
+Return evidence list (limit 8)
+app.py
+admission.py
+chat_completions.py
+engine.py
+router.py
+planner.py
+ultra.py
+pool.py
+claims.py
+hermes-adapter.ts
+route.ts
+sse-transform.ts
+README.md
+events.ts
+places-tool-ui.tsx
+places-map.tsx
+thread.tsx
+tools.py
+places.py
+places.db
+local_context.py
+gateway
+app.py
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+"""FastAPI application factory 
+for the Hermes Universal Gateway.
+Exposes the OpenAI-compatible 
+HTTP surface (models, chat 
+completions,
+responses stub), health 
+endpoints, and — when the 
+optional ``mcp`` package
+is importable — the MCP 
+streamable-http mount at ``/
+mcp``.
+"""
+from __future__ import 
+annotations
+import asyncio
+import contextlib
+import logging
+import threading
+import time
+from fastapi import Depends, 
+FastAPI, HTTPException, Request
+from fastapi.exceptions import 
+RequestValidationError
+from fastapi.responses import 
+JSONResponse
+from gateway.core.engine import 
+Engine, default_engine
+from gateway.openai.
+chat_completions import router 
+as chat_completions_router
+from gateway.openai.models 
+import router as models_router
+from gateway.openai.responses 
+import router as responses_router
+from gateway.security.admission 
+import (
+    ADMISSION_REJECTED_BODY,
+    ADMISSION_WAIT_MS,
+    Admission,
+    AdmissionTimeout,
+    GatewayMetrics,
+)
+from gateway.security.auth 
