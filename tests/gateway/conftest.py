@@ -14,7 +14,21 @@ from gateway.backends.stub import StubBackend
 from gateway.config import GatewayConfig
 from gateway.core.cache import GatewayCache
 from gateway.core.engine import Engine
+from gateway.core.local_context import VN_GEO_DB_ENV
 from gateway.protocols import EvidenceItem
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_vn_geo_db(tmp_path, monkeypatch):
+    """C2 (R15-B1): never let gateway tests read the real vn-geo db.
+
+    ``build_local_evidence`` falls back to the repo's ``data/vn-geo.db`` when
+    the env is unset — on a dev checkout that file EXISTS, so local evidence
+    would prepend + renumber ids and break ordering assertions. Default the
+    env to an absent path; local-wiring tests override it with their own
+    scratch db.
+    """
+    monkeypatch.setenv(VN_GEO_DB_ENV, str(tmp_path / "absent-vn-geo.db"))
 
 
 class FakeSynthesizer:
