@@ -428,6 +428,55 @@ def test_limiter_default_limit_is_1000(tmp_path):
     assert limiter.usage(today="2026-10-06")["limit"] == DEFAULT_DAILY_LIMIT == 1000
 
 
+def test_limiter_default_path_honors_env_override(tmp_path, monkeypatch):
+    """Default limiter (no explicit path) uses HERMES_VN_GEO_GOONG_USAGE."""
+    env_path = tmp_path / "env-usage.json"
+    monkeypatch.setenv("HERMES_VN_GEO_GOONG_USAGE", str(env_path))
+    limiter = DailyLimiter(daily_limit=1000)
+    assert limiter._state_path == env_path
+    limiter.record(today="2026-10-06")
+    assert limiter.usage(today="2026-10-06")["used"] == 1
+    assert json.loads(env_path.read_text(encoding="utf-8"))["count"] == 1
+
+
+def test_limiter_default_path_resolved_lazily(tmp_path, monkeypatch):
+    """Changing the env var after construction affects subsequent reads/writes."""
+    path_a = tmp_path / "a.json"
+    path_b = tmp_path / "b.json"
+    monkeypatch.setenv("HERMES_VN_GEO_GOONG_USAGE", str(path_a))
+    limiter = DailyLimiter(daily_limit=1000)
+    limiter.record(today="2026-10-06")
+    monkeypatch.setenv("HERMES_VN_GEO_GOONG_USAGE", str(path_b))
+    assert limiter._state_path == path_b
+    assert limiter.usage(today="2026-10-06")["used"] == 0
+    limiter.record(today="2026-10-06")
+    assert json.loads(path_b.read_text(encoding="utf-8"))["count"] == 1
+    assert json.loads(path_a.read_text(encoding="utf-8"))["count"] == 1
+
+
+def test_limiter_default_path_when_env_unset(tmp_path, monkeypatch):
+    """With the env var unset, the legacy <LOCALAPPDATA>/... default is used."""
+    monkeypatch.delenv("HERMES_VN_GEO_GOONG_USAGE", raising=False)
+    monkeypatch.setattr(goong, "_default_dir", lambda: tmp_path)
+    limiter = DailyLimiter(daily_limit=1000)
+    assert limiter._state_path == tmp_path / "goong_usage.json"
+    limiter.record(today="2026-10-06")
+    assert limiter.usage(today="2026-10-06")["used"] == 1
+    assert json.loads((tmp_path / "goong_usage.json").read_text(encoding="utf-8"))["count"] == 1
+
+
+def test_limiter_explicit_path_beats_env_override(tmp_path, monkeypatch):
+    """An explicit state_path always wins over the env var."""
+    env_path = tmp_path / "env-usage.json"
+    explicit = tmp_path / "explicit-usage.json"
+    monkeypatch.setenv("HERMES_VN_GEO_GOONG_USAGE", str(env_path))
+    limiter = DailyLimiter(state_path=explicit, daily_limit=1000)
+    assert limiter._state_path == explicit
+    limiter.record(today="2026-10-06")
+    assert explicit.exists()
+    assert not env_path.exists()
+
+
 # ---------- client + limiter integration ----------
 
 
