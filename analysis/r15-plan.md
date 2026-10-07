@@ -79,13 +79,15 @@ keep a dual reference: frozen `gpt-5.6-sol@xhigh` for longitudinal comparison + 
 | **R15-C** | Devin | local-first v1: `local_context.py` module + resolver guards + MCP `business` kind; NO engine.py edit (hook = C2 by orchestrator after D) | feeds B1 |
 | **R15-E** | OpenCode | spatial carry-over: ward polygons pilot (thanglequoc source, 2 provinces) — Goong deferred (key pending) | parallel, vn_geo-only |
 | **R15-B1** | Devin | xhigh single-agent pipeline: semantic planner → bounded retrieval → evidence table → draft 1 → claim verification → conditional revise (budgeted) | after D+A+C |
-| **R15-B2** | Devin | ultra mode + backend worker pool + separability routing (N≤4) — frozen §7; dispatched 2026-10-07 @ `b8a22d5` | after B1 + D verified |
+| **R15-B2** | Devin | ultra mode + backend worker pool + separability routing (N≤4) — **DONE, merged `1a0a918`** (+§7.1a fix) | after B1 + D verified |
 
 Wave 1 = D ∥ A ∥ C ∥ E (disjoint scopes) — **DONE 2026-10-07, merged `614ad18` (CI+Security green;
 ledger `agent_logs/r15_verification_wave1.md`)**. Wave 2 = B1 — **DONE 2026-10-07, merged `287448f`
 (+ hermeticity fix `15fa1aa`; CI+Security green; ledger `agent_logs/r15_verification_wave2.md`)** —
 C2 folded into B1 (single-writer engine; frozen `analysis/r15-interfaces.md` §6). Wave 3 = B2
-(ultra + backend worker pool) — **frozen §7, dispatched 2026-10-07 @ `b8a22d5` (Devin)**.
+(ultra + backend worker pool) — **DONE 2026-10-07, merged `1a0a918` (+§7.1a slot-cache fix
+`45564e5`; 7/7 orchestrator acceptance; ledger `agent_logs/r15_verification_wave3.md`).
+R15 waves 1–3 complete — round closed pending Sếp's optional extras (holdout/Goong key).**
 **Acceptance:** harness baseline recorded → after B1: gap-closure report + 45-case control 0 regressions
 + VN-local subset ≥ baseline. Holdout stays release-check-only.
 
