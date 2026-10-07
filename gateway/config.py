@@ -24,6 +24,9 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
 DEFAULT_RATE_LIMIT_RPS = 20.0
 DEFAULT_SYNTH_TIMEOUT = 120.0
+DEFAULT_ADMISSION_MAX_INFLIGHT = 4
+DEFAULT_ADMISSION_QUEUE_CAP = 16
+DEFAULT_REQUEST_DEADLINE_S = 180.0
 
 # Repo root = the directory containing the ``gateway`` package.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +60,17 @@ def _env_float(name: str, default: float) -> float:
         return float(raw)
     except ValueError:
         raise ValueError(f"{name} must be a number, got {raw!r}") from None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"{name} must be a boolean, got {raw!r}")
 
 
 def _env_str(name: str, default: str) -> str:
@@ -127,6 +141,10 @@ class GatewayConfig:
     port: int = DEFAULT_PORT
     api_key: str | None = None  # bearer auth; unset -> loopback-only (D8)
     rate_limit_rps: float = DEFAULT_RATE_LIMIT_RPS
+    admission_max_inflight: int = DEFAULT_ADMISSION_MAX_INFLIGHT
+    admission_queue_cap: int = DEFAULT_ADMISSION_QUEUE_CAP
+    request_deadline_s: float = DEFAULT_REQUEST_DEADLINE_S
+    metrics_enabled: bool = True
     fast_max_results: int = 10
     fast_extract: int = 4
     deep_search_queries: int = 3
@@ -151,6 +169,10 @@ class GatewayConfig:
             port=_env_int(f"{ENV_PREFIX}PORT", DEFAULT_PORT),
             api_key=_env_opt(f"{ENV_PREFIX}API_KEY"),
             rate_limit_rps=_env_float(f"{ENV_PREFIX}RATE_LIMIT_RPS", DEFAULT_RATE_LIMIT_RPS),
+            admission_max_inflight=_env_int(f"{ENV_PREFIX}ADMISSION_MAX_INFLIGHT", DEFAULT_ADMISSION_MAX_INFLIGHT),
+            admission_queue_cap=_env_int(f"{ENV_PREFIX}ADMISSION_QUEUE_CAP", DEFAULT_ADMISSION_QUEUE_CAP),
+            request_deadline_s=_env_float(f"{ENV_PREFIX}REQUEST_DEADLINE_S", DEFAULT_REQUEST_DEADLINE_S),
+            metrics_enabled=_env_bool(f"{ENV_PREFIX}METRICS", True),
             fast_max_results=_env_int(f"{ENV_PREFIX}FAST_MAX_RESULTS", 10),
             fast_extract=_env_int(f"{ENV_PREFIX}FAST_EXTRACT", 4),
             deep_search_queries=_env_int(f"{ENV_PREFIX}DEEP_SEARCH_QUERIES", 3),
