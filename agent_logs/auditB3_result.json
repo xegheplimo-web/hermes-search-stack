@@ -1,0 +1,27 @@
+{
+  "task": "auditB3",
+  "status": "partial_by_agent_completed_by_orchestrator",
+  "agent": "opencode/muse-spark-1.3-contributor-free (kit launch-agent.sh)",
+  "provenance": "B3 collected ~85% of the card's data (config greps, env example, gateway probes, cron, schtasks, refresh.log, db listing) then the CLI exited silently (EXIT=0, no doc, no result). Orchestrator extracted all real outputs from agent_logs/auditB3.log, re-ran the missing pieces (dbcounts script, full cron, watchdog script read, .env.gateway check) and assembled the deliverable.",
+  "file": "analysis/audit-B-config-ops.md",
+  "size_bytes": 11248,
+  "sections": 7,
+  "live_probes": [
+    "healthz ok backend=auto uptime~7511s",
+    "/v1/models -> hermes-search",
+    ":8642/ -> 404 (auth enforced; rejects observed in gateway.log)",
+    "netstat: 8787(p42984) + 8642(p28300) LISTENING; 9222 not listening",
+    "schtasks HermesSearchGateway last 18:02 result 0; Logon task never run",
+    "cron: 3 jobs active (vn-geo weekly, self-upgrade Mon, health daily)",
+    "db counts: searchstore 1285 docs/1287 ev; vn-geo 6981/8582; places 8/11; answers 4 tables; r14-* artifacts"
+  ],
+  "issues": [
+    ".env.gateway absent -> runtime on defaults; no persistent runtime config surface",
+    "Logon task never executed (267011) - boot-resilience unproven",
+    ":9222 not listening at probe time",
+    "refresh 06/10 14:41 had 2 transient errors (recovered)",
+    "r14-* test DBs (~33MB) sit beside real DBs in data/"
+  ],
+  "agent_log_preserved": "agent_logs/auditB3.log (824 lines, real outputs)",
+  "unresolved": "Root cause of B3 early exit unconfirmed (no error emitted; suspected free-tier/session limit). Predecessors: auditB (cline) hook-dispatch failure; auditB2 (cline) degenerate thinking loop, killed."
+}

@@ -1,0 +1,824 @@
+[0m
+> build · muse-spark-1.3-contributor-free
+[0m
+Bắt đầu audit B3 — chạy lệnh thu thập cấu hình và runtime.
+[0m$ [0mgrep -n -A14 '^web:' C:/Users/atton/AppData/Local/hermes/config.yaml
+2431:web:
+2432-  provider_tier:
+2433-    firecrawl: paid
+2434-  cache_ttl_minutes: 60
+2435-auxiliary:
+2436-  title_generation:
+2437-    provider: opencode-go
+2438-    model: space-bunny
+2439-  background_review:
+2440-    max_input_tokens: 40000
+2441-timezone: Asia/Ho_Chi_Minh
+2442-hooks:
+2443-  pre_tool_call:
+2444-    - matcher: terminal
+2445-      command: C:/Users/atton/AppData/Local/hermes/agent-hooks/block-dangerous.sh
+[0m
+[0m$ [0mcat .env.gateway.example 2>&1; echo ---; ls gateway/backends/ 2>&1
+# Hermes Universal Gateway — environment configuration example.
+# Copy to .env.gateway (or export the variables directly). No secrets:
+# leave API keys empty unless you need them.
+
+# --- Server bind (default 127.0.0.1:8787) ---
+HERMES_GATEWAY_HOST=127.0.0.1
+HERMES_GATEWAY_PORT=8787
+
+# --- Auth ---
+# When set, the HTTP surface requires `Authorization: Bearer <key>`.
+# When empty, only loopback requests are accepted.
+HERMES_GATEWAY_API_KEY=
+
+# --- Rate limit ---
+# Per-key token bucket, requests per second. 0 disables limiting.
+HERMES_GATEWAY_RATE_LIMIT_RPS=10
+
+# --- Backend selection: auto | hermes | standalone | stub ---
+HERMES_GATEWAY_BACKEND=auto
+
+# --- Synthesis LLM (OpenAI-compatible) ---
+HERMES_GATEWAY_SYNTH_BASE_URL=https://opencode.ai/zen/go/v1
+HERMES_GATEWAY_SYNTH_API_KEY=
+HERMES_GATEWAY_SYNTH_MODEL=deepseek-flash
+HERMES_GATEWAY_SYNTH_TIMEOUT=120
+# Optional extra HTTP headers (JSON object) for the synth client. The OpenCode
+# Zen/Go relay requires x-opencode-session; the gateway already adds one
+# automatically for opencode.ai targets, so normally nothing goes here.
+HERMES_GATEWAY_SYNTH_HEADERS=
+
+# --- Databases ---
+HERMES_GATEWAY_CACHE_DB=data/answers.db
+HERMES_GATEWAY_STORE_DB=data/searchstore.db
+
+# --- Search caps ---
+HERMES_GATEWAY_FAST_MAX_RESULTS=10
+HERMES_GATEWAY_FAST_EXTRACT=4
+HERMES_GATEWAY_DEEP_SEARCH_QUERIES=3
+HERMES_GATEWAY_DEEP_EXTRACT=8
+
+# --- Hermes bridge (used when backend=hermes) ---
+HERMES_GATEWAY_HERMES_PYTHON=
+HERMES_GATEWAY_HERMES_HOME=
+HERMES_GATEWAY_REPO_ROOT=
+---
+__init__.py
+__pycache__
+hermes_bridge.py
+standalone.py
+stub.py
+[0m
+[0m$ [0mgrep -n -A10 'mcp_servers:' C:/Users/atton/AppData/Local/hermes/config.yaml; echo ---; grep -n -A8 'api_server' C:/Users/atton/AppData/Local/hermes/config.yaml; echo ---; grep -n 'cdp_url' C:/Users/atton/AppData/Local/hermes/config.yaml; echo ---; grep -n -A6 'compression:' C:/Users/atton/AppData/Local/hermes/config.yaml
+1627:# mcp_servers:
+1628-#   time:
+1629-#     command: uvx
+1630-#     args: ["mcp-server-time"]
+1631-#   filesystem:
+1632-#     command: npx
+1633-#     args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+1634-#   notion:
+1635-#     url: https://mcp.notion.com/mcp
+1636-#   github:
+1637-#     command: npx
+--
+2452:mcp_servers:
+2453-  hermes-search:
+2454-    url: http://127.0.0.1:8787/mcp
+2455-    enabled: true
+2456-  openai-docs:
+2457-    url: https://developers.openai.com/mcp
+2458-    enabled: true
+2459-platforms:
+2460-  api_server:
+2461-    enabled: true
+2462-security:
+---
+1113:# Configure via the ``platforms.api_server.extra.model_routes`` gateway
+1114-# config block:
+1115-#
+1116-#   platforms:
+1117:#     api_server:
+1118-#       enabled: true
+1119-#       extra:
+1120-#         key: "your-api-server-secret"
+1121-#         model_routes:
+1122-#           # Xiaozhi clients send model="minimax-m2" → routed to MiniMax via OpenRouter
+1123-#           minimax-m2:
+1124-#             model: "minimax/minimax-m1"
+1125-#             provider: "openrouter"          # optional — overrides global provider
+--
+1231:  # Floor under the same drain for cron jobs and api_server (/v1) runs
+1232-  # (seconds). Default 30.
+1233-  # restart_drain_timeout above is written for chat turns, which are cheap to
+1234-  # interrupt: the user is told the gateway is restarting and the session
+1235-  # resumes on their next message. A cron run has no such safety net — it is
+1236-  # recorded in jobs.json as a permanent failure, nobody is waiting on it, and
+1237-  # a recurring job simply skips to its next schedule. So in-flight cron work
+1238-  # gets its own grace window instead of inheriting the 0 above, and so do
+1239:  # api_server (/v1) runs: an interrupted /v1 run fails its waiting caller.
+1240-  # Clamped at runtime to the shutdown-watchdog leash (restart_drain_timeout
+1241-  # + 60s) minus teardown headroom, so values past ~50s need a matching
+1242-  # TimeoutStopSec bump to take effect. Set 0 to opt out and drain cron and
+1243-  # /v1 runs on restart_drain_timeout like before.
+1244-  # cron_drain_timeout: 30
+1245-
+1246-  # In-band restart wait (seconds) for active turns to finish BEFORE stop()
+1247-  # begins. /restart and SIGUSR1 refuse new work, then wait up to this cap for
+--
+1397:  api_server:
+1398-    max_concurrent_runs: 10
+1399-    history_tool_output_max_chars: 0
+1400-  # Post-interrupt grace for running agents during an unexpected SIGTERM.
+1401-  # Adapter, bridge, and database teardown starts after this many seconds even
+1402-  # if an agent has not unwound. Keep it below the service-manager stop budget.
+1403-  # signal_interrupt_grace_timeout: 1
+1404-
+1405-  # Let platform adapters honor HTTP_PROXY / HTTPS_PROXY / NO_PROXY (and
+--
+2460:  api_server:
+2461-    enabled: true
+2462-security:
+2463-  allow_private_urls: true
+---
+638:  cdp_url: http://127.0.0.1:9222
+---
+671:compression:
+672-  # Enable automatic context compression (default: true)
+673-  # Set to false if you prefer to manage context manually or want errors on overflow
+674-  enabled: true
+675-
+676-  # Fail closed before lossy compaction unless an active memory provider that
+677-  # implements the pre-compress checkpoint contract (API v2) confirms its
+--
+984:#   compression:
+985-#     provider: "auto"
+986-#     model: ""
+987-#     # max_concurrency: 2    # Optional: cap simultaneous compression calls
+988-#     # no_progress_timeout: 60   # Codex/Responses-only: seconds a stream may go without a
+989-#                                 # substantive event before it fails fast (default: 60).
+990-#                                 # Independent of "timeout" above (the overall request
+--
+1217:  # compression: block, shown here for discoverability next to the stall
+1218-  # watchdog they complement — a hung compression is a common stall cause):
+1219:  # compression:
+1220-  #   context_timeout_seconds: 120          # inactivity budget for in-agent
+1221-  #                                         # compress_context (0 = disable)
+1222-  #   context_total_ceiling_seconds: 600    # absolute cap on the pre-commit
+1223-  #                                         # wait even while tokens stream
+1224-
+1225-  # Graceful drain timeout for gateway stop/restart (seconds).
+[0m
+[0m$ [0mcurl -s -m3 127.0.0.1:8787/healthz 2>&1; echo ---; curl -s -m3 127.0.0.1:8787/v1/models 2>&1 | head -c 2000; echo ---; curl -s -m3 -o /dev/null -w '%{http_code}\n' 127.0.0.1:8642/ 2>&1
+{"status":"ok","version":"0.1.0","backend":"auto","uptime_s":7511.943}---
+{"object":"list","data":[{"id":"hermes-search","object":"model","owned_by":"hermes-search-stack","created":1759276800}]}---
+404
+[0m
+[0m$ [0mls C:/Users/atton/AppData/Local/hermes/cron/ 2>&1; echo ---; hermes cron list 2>&1 | head -30
+executions.db
+jobs.json
+notepad.db
+output
+ticker_heartbeat
+ticker_last_success
+usage_audit.jsonl
+---
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Scheduled Jobs (profile: default)               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  329700aa0745 [active]
+    Name:      vn-geo weekly refresh
+    Schedule:  every monday 8am
+    Repeat:    ∞
+    Next run:  2026-10-12T08:00:00+07:00
+    Deliver:   local
+    Script:    vn-geo-refresh.py
+    Mode:      no-agent (script stdout delivered directly)
+    Last run:  2026-10-06T14:59:33.182504+07:00  ok
+    Execution: completed  a4bf194fa9544db798f282a0450f9791
+    ⚠ Last failure at 2026-10-06T14:41:02.480374+07:00: Script exited with code 1 — recovered since
+
+  f9137b5396f7 [active]
+    Name:      hermes-self-upgrade sweep
+    Schedule:  every monday 9:30am
+    Repeat:    ∞
+    Next run:  2026-10-12T09:30:00+07:00
+    Deliver:   bot-chat
+    Skills:    hermes-self-upgrade
+    Script:    hermes-sweep-collect.py
+    Workdir:   C:\Users\atton\hermes-search-stack
+    Last run:  2026-10-06T15:01:55.342320+07:00  ok
+    Execution: completed  42720931dfd24907951df9d65c2b97c1
+
+  349895e3425a [active]
+[0m
+Thu thập xong đợt 1 — tiếp tục probes gateway và tasks.
+[0m$ [0mhead -40 pyproject.toml 2>&1; echo ---; cat requirements-gateway.txt 2>&1
+# Ruff + pytest configuration for hermes-search-stack.
+# CI runs: `ruff check .`, `ruff format --check .`, `pytest -q` (see .github/workflows/ci.yml).
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+---
+# Hermes Universal Gateway — runtime dependencies.
+# Exact pins, resolved 2026-06-10 via `uv pip install` into the repo .venv
+# (Python 3.14.7). Install with:
+#   uv pip install --python .venv/Scripts/python.exe -r requirements-gateway.txt
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+mcp==2.3.0
+[0m
+[0m$ [0mls C:/Users/atton/AppData/Local/hermes/logs/ 2>&1 | grep -i gateway; echo ---; ls C:/Users/atton/AppData/Local/hermes/scripts/ 2>&1 | head -20
+gateway.log
+gateway-exit-diag.log
+gateway-stdio.log
+hermes-search-gateway.log
+---
+__pycache__
+hermes-health-check.py
+hermes-search-gateway-watchdog.cmd
+hermes-search-gateway-watchdog.py
+hermes-sweep-collect.py
+vn-geo-refresh.py
+[0m
+[0m$ [0mschtasks /query /tn HermesSearchGateway /v /fo LIST 2>&1; echo ===LOGON===; schtasks /query /tn HermesSearchGatewayLogon /v /fo LIST 2>&1
+Folder: \
+HostName:                             USD
+TaskName:                             \HermesSearchGateway
+Next Run Time:                        07/10/2026 18:07:00
+Status:                               Ready
+Logon Mode:                           Interactive only
+Last Run Time:                        07/10/2026 18:02:01
+Last Result:                          0
+Author:                               USD\atton
+Task To Run:                          C:\Users\atton\AppData\Local\hermes\scripts\hermes-search-gateway-watchdog.cmd 
+Start In:                             N/A
+Comment:                              N/A
+Scheduled Task State:                 Enabled
+Idle Time:                            Disabled
+Power Management:                     Stop On Battery Mode, No Start On Batteries
+Run As User:                          atton
+Delete Task If Not Rescheduled:       Disabled
+Stop Task If Runs X Hours and X Mins: 72:00:00
+Schedule:                             Scheduling data is not available in this format.
+Schedule Type:                        One Time Only, Minute 
+Start Time:                           15:52:00
+Start Date:                           07/10/2026
+End Date:                             N/A
+Days:                                 N/A
+Months:                               N/A
+Repeat: Every:                        0 Hour(s), 5 Minute(s)
+Repeat: Until: Time:                  None
+Repeat: Until: Duration:              Disabled
+Repeat: Stop If Still Running:        Disabled
+===LOGON===
+
+Folder: \
+HostName:                             USD
+TaskName:                             \HermesSearchGatewayLogon
+Next Run Time:                        N/A
+Status:                               Ready
+Logon Mode:                           Interactive only
+Last Run Time:                        30/11/1999 00:00:00
+Last Result:                          267011
+Author:                               USD\atton
+Task To Run:                          C:\Users\atton\AppData\Local\hermes\scripts\hermes-search-gateway-watchdog.cmd 
+Start In:                             N/A
+Comment:                              N/A
+Scheduled Task State:                 Enabled
+Idle Time:                            Disabled
+Power Management:                     Stop On Battery Mode, No Start On Batteries
+Run As User:                          atton
+Delete Task If Not Rescheduled:       Disabled
+Stop Task If Runs X Hours and X Mins: 72:00:00
+Schedule:                             Scheduling data is not available in this format.
+Schedule Type:                        At logon time
+Start Time:                           N/A
+Start Date:                           N/A
+End Date:                             N/A
+Days:                                 N/A
+Months:                               N/A
+Repeat: Every:                        N/A
+Repeat: Until: Time:                  N/A
+Repeat: Until: Duration:              N/A
+Repeat: Stop If Still Running:        N/A
+[0m
+[0m$ [0mnetstat -ano | grep -E ':(8787|8642|9222)' 2>&1; echo ---; curl -s -m3 127.0.0.1:8787/v1/models 2>&1
+TCP    127.0.0.1:8642         0.0.0.0:0              LISTENING       28300
+  TCP    127.0.0.1:8787         0.0.0.0:0              LISTENING       42984
+  TCP    127.0.0.1:8787         127.0.0.1:56051        ESTABLISHED     42984
+  TCP    127.0.0.1:8787         127.0.0.1:63431        ESTABLISHED     42984
+  TCP    127.0.0.1:54761        127.0.0.1:8787         TIME_WAIT       0
+  TCP    127.0.0.1:56051        127.0.0.1:8787         ESTABLISHED     33448
+  TCP    127.0.0.1:61879        127.0.0.1:8787         TIME_WAIT       0
+  TCP    127.0.0.1:61880        127.0.0.1:8787         TIME_WAIT       0
+  TCP    127.0.0.1:61881        127.0.0.1:8642         TIME_WAIT       0
+  TCP    127.0.0.1:63431        127.0.0.1:8787         ESTABLISHED     28300
+---
+{"object":"list","data":[{"id":"hermes-search","object":"model","owned_by":"hermes-search-stack","created":1759276800}]}
+[0m
+[93m[1m! [0mpermission requested: external_directory (C:\Users\atton\AppData\Local\hermes\scripts\*); auto-rejecting
+[0m✗ [0mRead C:/Users/atton/AppData/Local/hermes/scripts/hermes-search-gateway-watchdog.py failed[90m [limit=60][0m
+[91m[1mError: [0mThe user rejected permission to use this specific tool call.
+[0m
+[0m$ [0mtail -5 data/refresh.log 2>&1; echo ---; ls -la data/*.db 2>&1
+2026-10-06T12:29:52+07:00 new=0 updated=0 unchanged=5423 errors=0
+2026-10-06T14:41:02+07:00 new=0 updated=0 unchanged=3553 errors=2
+2026-10-06T14:59:33+07:00 new=0 updated=0 unchanged=5423 errors=0
+2026-10-07T08:14:58+07:00 new=0 updated=0 unchanged=5423 errors=0
+2026-10-07T08:15:55+07:00 business seeded=25 new=0 skipped=0
+---
+-rw-r--r-- 1 atton 197609    61440 Thg10  6 18:23 data/answers.db
+-rw-r--r-- 1 atton 197609   106496 Thg10  7 14:22 data/places.db
+-rw-r--r-- 1 atton 197609 18399232 Thg10  7 08:07 data/r14-c-test2.db
+-rw-r--r-- 1 atton 197609    98304 Thg10  7 08:08 data/r14-d-test2.db
+-rw-r--r-- 1 atton 197609 14254080 Thg10  7 08:07 data/r14-integration.db
+-rw-r--r-- 1 atton 197609  3682304 Thg10  6 21:14 data/searchstore.db
+-rw-r--r-- 1 atton 197609 18399232 Thg10  7 08:15 data/vn-geo.db
+[0m
+[0m$ [0mtail -15 C:/Users/atton/AppData/Local/hermes/logs/hermes-search-gateway.log 2>&1; echo ===GATEWAY.LOG===; tail -8 C:/Users/atton/AppData/Local/hermes/logs/gateway.log 2>&1
+INFO:     127.0.0.1:56971 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56972 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56973 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56974 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56975 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56976 - "POST /mcp HTTP/1.1" 200 OK
+                    INFO     Terminating session:        streamable_http.py:855
+                             ec29479464d3484bb89e2c805bd                       
+                             de79e                                             
+INFO:     127.0.0.1:56977 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54761 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61879 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61880 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60826 - "POST /mcp HTTP/1.1" 200 OK
+===GATEWAY.LOG===
+2026-10-07 16:19:49,717 INFO gateway.run_profile_reconcile: [MULTIPLEX] Re-scanned profile 'mem0-trial' after config/.env change (0 adapter(s) connected)
+2026-10-07 16:38:20,255 INFO gateway.run_profile_reconcile: [MULTIPLEX] Re-scanned profile 'mem0-trial' after config/.env change (0 adapter(s) connected)
+2026-10-07 16:58:22,539 WARNING gateway.platforms.api_server: API server rejected invalid API key: remote='127.0.0.1' peer_ip='127.0.0.1' method='GET' path='/api/sessions' user_agent='curl/8.18.0'
+2026-10-07 17:01:50,810 INFO gateway.run_profile_reconcile: [MULTIPLEX] Re-scanned profile 'mem0-trial' after config/.env change (0 adapter(s) connected)
+2026-10-07 17:02:20,976 INFO gateway.run_profile_reconcile: [MULTIPLEX] Re-scanned profile 'mem0-trial' after config/.env change (0 adapter(s) connected)
+2026-10-07 17:02:51,084 INFO gateway.run_profile_reconcile: [MULTIPLEX] Re-scanned profile 'mem0-trial' after config/.env change (0 adapter(s) connected)
+2026-10-07 17:10:21,952 WARNING gateway.platforms.api_server: API server rejected invalid API key: remote='127.0.0.1' peer_ip='127.0.0.1' method='GET' path='/v1/models' user_agent='curl/8.18.0'
+2026-10-07 17:49:56,462 INFO gateway.run_profile_reconcile: MCP servers reconciled with config (default): removed=[] added=['openai-docs']
+[0m
+[0m$ [0mhermes cron list 2>&1 | tail -30; echo ---; ls analysis/ agent_logs/ scratch/ 2>&1
+Mode:      no-agent (script stdout delivered directly)
+    Last run:  2026-10-06T14:59:33.182504+07:00  ok
+    Execution: completed  a4bf194fa9544db798f282a0450f9791
+    ⚠ Last failure at 2026-10-06T14:41:02.480374+07:00: Script exited with code 1 — recovered since
+
+  f9137b5396f7 [active]
+    Name:      hermes-self-upgrade sweep
+    Schedule:  every monday 9:30am
+    Repeat:    ∞
+    Next run:  2026-10-12T09:30:00+07:00
+    Deliver:   bot-chat
+    Skills:    hermes-self-upgrade
+    Script:    hermes-sweep-collect.py
+    Workdir:   C:\Users\atton\hermes-search-stack
+    Last run:  2026-10-06T15:01:55.342320+07:00  ok
+    Execution: completed  42720931dfd24907951df9d65c2b97c1
+
+  349895e3425a [active]
+    Name:      hermes daily health check
+    Schedule:  30 8 * * *
+    Repeat:    ∞
+    Next run:  2026-10-08T08:30:00+07:00
+    Deliver:   local
+    Skills:    hermes-self-upgrade
+    Script:    hermes-health-check.py
+    Workdir:   C:\Users\atton\hermes-search-stack
+    Last run:  2026-10-07T08:34:46.996091+07:00  ok
+    Dispatch:  on time (scheduled 2026-10-07T08:30:00+07:00)
+    Execution: completed  e9eaa1c8a6c84569a85aec30a66311a9
+
+---
+agent_logs/:
+acceptance_dr.log
+auditA.log
+auditA_prompt.txt
+auditA_result.json
+auditB.log
+auditB_prompt.txt
+auditB2.log
+auditB3.log
+auditB3_prompt.txt
+auditC.log
+auditC_prompt.txt
+auditC_result.json
+baseline_hashes.txt
+cline_a1.log
+cline_a4.log
+cline_b1.log
+cline_b1_v2.log
+cline_ci.log
+cline_ci_v2.log
+cline_prompt.txt
+cline_prompt_a1.txt
+cline_prompt_a4.txt
+cline_prompt_b1.txt
+cline_prompt_b1_v2.txt
+cline_prompt_ci.txt
+cline_prompt_ci_v2.txt
+cline_t1.log
+codemap-devin-2026-10-07.txt
+devin_a3.log
+devin_a3_v2.log
+devin_b1d.log
+devin_prompt_a3.txt
+devin_prompt_a3_v2.txt
+devin_prompt_b1d.txt
+dr_coding_agents.log
+e2e_nobel_spacebunny.log
+e2e_node_spacebunny.log
+e2e_postupdate.log
+e2e_search_gold_glm5.log
+e2e_search_vn.log
+e2e_search_vn2.log
+e2e_smoke.log
+extract_stress.log
+fallback_test.log
+opencode_a2.log
+opencode_a5.log
+opencode_a5_v2.log
+opencode_ci.log
+opencode_prompt.txt
+opencode_prompt_a2.txt
+opencode_prompt_a5.txt
+opencode_prompt_a5_v2.txt
+opencode_prompt_ci.txt
+opencode_prompt_v2.txt
+opencode_t2.log
+opencode_t2v2.log
+r10_after_battery_run.log
+r10_after_corpus_run.log
+r10_baseline_run.log
+r10_baseline_run2.log
+r10_compare.py
+r10_control_old_run.log
+r10_probe_body.json
+r10_repro_battery.py
+r10_repro_battery_after.json
+r10_repro_battery_after.py
+r10_repro_battery_after.txt
+r10_repro_battery_before.json
+r10_repro_battery_before.txt
+r10a.log
+r10a_live_after.json
+r10a_probe.py
+r10a_prompt.txt
+r10a_repro_before.json
+r10a-gateway8790.log
+r10b.log
+r10b_assemble_controls.py
+r10b_body_news.json
+r10b_body_places.json
+r10b_curl_places.log
+r10b_extract.py
+r10b_launch_curl.py
+r10b_live_a2.json
+r10b_live_controls.json
+r10b_prompt.txt
+r10b_pytest_full.err.log
+r10b_pytest_full.log
+r10b_report.md
+r10b_repro_before.json
+r10b_req_a2.json
+r10b_req_news.json
+r10b_req_places.json
+r10b_resp_a2_fixed.json
+r10b_resp_a2_raw.json
+r10b_resp_news.json
+r10b_resp_places.json
+r10b_write_bodies.py
+r10b2.log
+r10b2_prompt.txt
+r10b-gateway8791.err.log
+r10b-gateway8791.log
+r10c.log
+r10c_prompt.txt
+r10c2.log
+r10c2_prompt.txt
+r10-gateway8795.log
+r11_evidence_pack.md
+r11_prep_analysis.py
+r11_prep_analysis_output.txt
+r11_verify.py
+r11_verify2.py
+r11_verify3.py
+r11a.log
+r11a_prompt.txt
+r11b.log
+r11b_prompt.txt
+r11c.log
+r11c_prompt.txt
+r11d.log
+r11d_prompt.txt
+r13_hermes_verify_findings.md
+r13a.log
+r13a_probe.py
+r13a_prompt.txt
+r13a_rescue_brief.txt
+r13b.log
+r13b_prompt.txt
+r13c.log
+r13c_prompt.txt
+r13e.log
+r13e_prompt.txt
+r13f_cron_full.log
+r13f_seed_rerun.log
+r13f_seed_rerun3.log
+r13f_seed_rerun4.log
+r13f_seed_rerun4b.log
+r14_verification.md
+r14a_prompt.txt
+r14a_result.json
+r14a_run.log
+r14b_prompt.txt
+r14b_result.json
+r14b_run.log
+r14c_prompt.txt
+r14c_result.json
+r14c_run.log
+r14d_prompt.txt
+r14d_result.json
+r14d_run.log
+r14e_prompt.txt
+r14e_prompt_v2.txt
+r14e_result.json
+r14e_run.log
+r14e_run_fail1.log
+r14f_prompt.txt
+r14f_result.json
+r14f_run.log
+r14f_run_fail1.log
+r14g_prompt.txt
+r14g_result.json
+r14g_run.log
+r15_verification_wave1.md
+r15_verification_wave2.md
+r15_verification_wave3.md
+r15a_prompt.txt
+r15a_prompt_v2.txt
+r15a_result.json
+r15a_run.log
+r15a_run_v2.log
+r15b1_prompt.txt
+r15b1_run.log
+r15b2_prompt.txt
+r15b2_run.log
+r15c_prompt.txt
+r15c_result.json
+r15c_run.log
+r15d_prompt.txt
+r15d_result.json
+r15d_run.log
+r15e_prompt.txt
+r15e_result.json
+r15e_run.log
+r16_verification_wave1.md
+r16_verification_wave2.md
+r16_verification_wave3.md
+r16a_prompt.txt
+r16a_run.log
+r16b_prompt.txt
+r16b_run.log
+r16d_prompt.txt
+r16e_prompt.txt
+r16e_run.log
+r16w4_openai_sse.raw
+r16w4_openai_tools_body.json
+r16w4_openai_tools_sse.raw
+r16w4_probe_body.json
+r16w4_probe_sse.err
+r16w4_probe_sse.raw
+r2a.log
+r2a_prompt.txt
+r2b.log
+r2b_prompt.txt
+r2c.log
+r2c_prompt.txt
+r2d.log
+r2d_prompt.txt
+r3a.log
+r3a_prompt.txt
+r3b.log
+r3b.log.killed
+r3b_prompt.txt
+r3c.log
+r3c_prompt.txt
+r4a.log
+r4a_prompt.txt
+r4b.log
+r4b_prompt.txt
+r4c.log
+r4c_prompt.txt
+r4d.log
+r4d_prompt.txt
+r4e.log
+r4e_prompt.txt
+r5a.log
+r5a_prompt.txt
+r5b.log
+r5b_prompt.txt
+r6a.log
+r6a_prompt.txt
+r6b.log
+r6b_prompt.txt
+r6c.log
+r6c_prompt.txt
+r6d.log
+r6d_devin.log
+r6d_devin_prompt.txt
+r6d_prompt.txt
+r6d_prompt_v2.txt
+r6d_v2.log
+r7a.log
+r7a_prompt.txt
+r7b.log
+r7b_prompt.txt
+r7c.log
+r7c_prompt.txt
+r7d-s1.log
+r7d-s1-cache.json
+r7d-s1-list.json
+r7d-s1-prompt.txt
+r7d-s1-report.md
+r7d-s1-stats.json
+r7d-s1-work
+r7d-s2a.log
+r7d-s2b.log
+r7d-s2b-prompt.txt
+r7d-s2b-stats.json
+r7d-s2-prompt.txt
+r7d-s2-stats.json
+r8a.log
+r8a_prompt.txt
+r8b.log
+r8b_prompt.txt
+r8c.log
+r8c_prompt.txt
+r8-chat.json
+r8-chat2.json
+r8-chat-req.json
+r8-chat-stream.sse
+r8-chat-stream-req.json
+r8d.log
+r8d_prompt.txt
+r8d-vn_news-broken.py
+r8-gateway-live.log
+r8-gateway-live2.log
+r8-gateway-live3.log
+r9_accept.py
+r9_accept_out.txt
+r9_accept2.py
+r9_accept2_out.txt
+r9_accept3.py
+r9_accept3_out.txt
+r9_evidence.md
+r9_probe_prompt.txt
+r9_quality_battery.json
+r9_quality_battery.txt
+r9a.log
+r9a_prompt.txt
+r9a_traces
+r9a_verify_answersdb.py
+r9a_verify_fts.py
+r9b.log
+r9b_prompt.txt
+r9c.log
+r9c_prompt.txt
+r9c_validate.py
+r9-gateway-live.log
+r9w2a.log
+r9w2a_live_db_after.json
+r9w2a_live_db_before.json
+r9w2a_live_mcp.json
+r9w2a_live_readyz.json
+r9w2a_live_req.json
+r9w2a_live_run1.json
+r9w2a_live_run1.meta.json
+r9w2a_live_run2.json
+r9w2a_live_run2.meta.json
+r9w2a_prompt.txt
+r9w2a_repro.py
+r9w2a_repro.txt
+r9w2a_repro_after.txt
+r9w2a_verify.py
+r9w2a-gateway8790.log
+r9w2b.log
+r9w2b_before.txt
+r9w2b_counts.py
+r9w2b_counts.txt
+r9w2b_full_tests.out
+r9w2b_migrate_live.py
+r9w2b_prompt.txt
+r9w2b_retry_prompt.txt
+r9w2b2.log
+r9w2c.log
+r9w2c_prompt.txt
+r9w2c_resolve.txt
+r9w2d.log
+r9w2d_prompt.txt
+searchstore.db.bak-r9w2
+update_run.log
+verify_final_t1.log
+verify_final_t2.log
+verify_postupdate_t1.log
+verify_postupdate_t2.log
+verify_rerun1.log
+verify_rerun2.log
+verify_rerun3_t1.log
+verify_rerun4_t2.log
+vn_news_live.jsonl
+
+analysis/:
+00-FINAL-features.md
+acceptance-deep-research.md
+architecture-proposal.md
+audit-A-core-flows.md
+audit-C-inventory-web.md
+audit-full-2026-10-07.md
+audit-plan-2026-10-07.md
+codemap-devin-2026-10-07.txt
+deep-research-coding-agents.md
+EVIDENCE.md
+log_latency_stats.py
+perplexity-authenticity.md
+perplexity-setup-plan.md
+quality-rootcause.md
+r10-interfaces.md
+r10-report.md
+r11a-vllm-serving-qos.md
+r11b-local-serving-upgrades.md
+r11c-gateway-upgrades.md
+r11d-vllm-feature-index.md
+r11-proposals.md
+r12-plan.md
+r13-candidate-plan.md
+r13-gmaps-scraper-analysis.md
+r13-interfaces.md
+r13-user-guide.md
+r13-verification.md
+r14-interfaces.md
+r14-plan.md
+r14-user-guide.md
+r15-interfaces.md
+r15-plan.md
+r16-fixtures
+r16-interfaces.md
+r16-plan.md
+r17-providers-plan.md
+r4-interfaces.md
+r5-interfaces.md
+r6-interfaces.md
+r7-interfaces.md
+r8-interfaces.md
+r9-eval-inventory.md
+r9-interfaces.md
+r9-report.md
+r9-system-map.md
+refresh-areas.json
+round2-interfaces.md
+round2-verification.md
+round3-interfaces.md
+round3-verification.md
+round7-verification.md
+round8-verification.md
+scoreboard.md
+speed-rootcause.md
+speed-round2.md
+storage-modern.md
+vn-business-data-sources.md
+vn-geodata-playbook.md
+
+scratch/:
+auditb_dbcounts.py
+bench_webstack.py
+bench2_webstack.py
+config_snapshot.yaml
+check_state.py
+check_state2.py
+check_state3.py
+r10a
+r14a_acceptance.py
+r14b_acceptance.py
+r14e_acceptance.py
+r6a_smoke.db
+[0m
+EXIT=0
