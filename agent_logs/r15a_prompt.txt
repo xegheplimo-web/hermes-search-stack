@@ -1,0 +1,46 @@
+# R15-A — Benchmark foundation (Cline)
+
+You are working in your own git worktree. Read `analysis/r15-interfaces.md` §0 + §2 FIRST — frozen
+contract; implement exactly. Repo context: `hermes-search-stack` — its `evals/r9/` holds a 50-case
+VN web-answer corpus (45 + 5 holdout), a runner (`run_corpus.py`), and `scripts/scoreboard.py`.
+
+## Mission
+Upgrade the eval foundation so future pipeline work (R15-B) is measurable: corpus_v1 (harder cases +
+severity + variants), runner v2 (variant consistency, p95, severity-weighted), scoreboard gap scaffold
+(reference-trace comparison — schema only, NO network, NO spending).
+
+## Scope (write ONLY these)
+- `evals/r9/corpus_v1.jsonl` — NEW: all 50 v0 cases preserved (ids/queries/must_include unchanged) +
+  15–20 NEW harder cases (multi-part VN, freshness-sensitive, ≥4 with `variants`). Schema v2 per §2.
+  `ground_truth_source` must be "official"|"human-reviewed"|"key"|"derived" — NEVER a model.
+  Do not modify `corpus_v0.jsonl` or the holdout split.
+- `evals/r9/run_corpus.py` — v2: keep ALL existing flags working (incl. `--variants`, `--dry-run`);
+  add per-case `severity` + `variant_consistency`; aggregates `severity_weighted_pass_rate`
+  (S0×4,S1×2,S2×1,S3×0.5), `p50/p95_latency_s`, `variant_consistency_avg`. Keep v1 fields intact.
+- `evals/r9/README.md` — document schema v2 + reference-trace schema.
+- `scripts/scoreboard.py` — read newest `results/r15_corpus_*.json`; gap scaffold: if
+  `results/reference/*.json` exists → report `reference_pass_rate` + `gap_pp`; else skip with stderr
+  warning, exit 0. Keep existing behavior + contracts.
+- NEW/extended test files (`tests/` — new files or additive extensions only) + fixtures.
+
+## Constraints
+- stdlib only; deterministic; NO network anywhere (pytest fully hermetic; `--dry-run` fixture mode
+  must work offline). Holdout stays release-check-only. Never touch `data/vn-geo.db`.
+- Read/copy nothing outside your worktree. Never commit/push/branch/stash.
+
+## Self-check before finishing
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q` (cwd = worktree root) →
+   exit code 0 (exit code is truth; dots-only output expected).
+2. `ruff check .` + `ruff format --check .` → clean.
+3. `python evals/r9/run_corpus.py --dry-run --corpus evals/r9/corpus_v1.jsonl` (or equivalent fixture
+   mode) exits 0 and emits v2 aggregates; run it and paste the command + observed result in result.json.
+4. `python scripts/scoreboard.py` regenerates `analysis/scoreboard.md` + `results/scoreboard.json`
+   without error (with and without `results/reference/`).
+5. Tests cover: corpus validity (unique ids, schema, holdout intact), severity math, p95 on synthetic
+   durations, variant consistency math, scoreboard with/without reference dir.
+6. Write `result.json` at worktree root:
+   `{"task": "r15-a", "status": "ok", "files_changed": [...], "tests_run": N, "tests_note": "...",
+     "summary": "...", "deviations": [...]}`
+
+Start editing files within ~10 minutes. If blocked >15 min on the same error: stop, write result.json
+with status "blocked" + what you tried. Budget: ~50 min.

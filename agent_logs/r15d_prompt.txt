@@ -1,0 +1,44 @@
+# R15-D — Gateway reliability P0 (Devin)
+
+You are working in your own git worktree. Read `analysis/r15-interfaces.md` §0 + §1 FIRST — that is the
+frozen contract; implement it exactly. Repo context: `hermes-search-stack` — a local search/answer
+gateway (FastAPI + engine pipeline + Hermes sidecar worker).
+
+## Mission
+Make the gateway survive concurrent load and long runs without stalls: admission control, health
+isolation, cooperative deadline/watchdog, complete phase timers, metrics counters. This is the
+prerequisite for the R15 answer-quality wave (long xhigh-pipeline runs will come later).
+
+## Scope (write ONLY these)
+- `gateway/security/admission.py` — NEW bounded admission (in-flight cap + wait queue cap → 503 + Retry-After: 1).
+- `gateway/config.py` — 4 new knobs exactly as §1 (admission_max_inflight=4, admission_queue_cap=16,
+  request_deadline_s=180.0, metrics_enabled=True; env prefix HERMES_GATEWAY_).
+- `gateway/app.py` — wire admission around the expensive answer endpoints; keep `/healthz` liveness-only
+  (<1 s even while backend busy — it must NOT touch engine/backend); `/readyz` non-blocking readiness;
+  `GET /metrics` JSON per §1.5.
+- `gateway/core/engine.py` — cooperative deadline checks between stages (partial result + warning
+  "request deadline exceeded" — never raise); complete timings additively (`admission_wait_ms`, plus a
+  deadline flag if needed — do NOT rename/remove existing keys). Frozen §5 event stream / EngineResult
+  fields stay byte-compatible; additions optional-only.
+- NEW test files under `tests/gateway/` (e.g. `test_admission.py`, `test_health_isolation.py`,
+  `test_deadline.py`, `test_metrics.py`) — hermetic, stub backend only.
+
+## Do NOT
+- Touch `gateway/backends/hermes_bridge.py` (its serialization is a known limit — document it in a
+  test comment; worker pool is a later task). Do not touch `gateway/core/{router,synthesis,cache}.py`,
+  `gateway/security/{auth,rate_limit}.py` semantics, `vn_geo/*`, `evals/*`, `scripts/*`.
+- Read/copy anything outside your worktree. Never commit/push/branch/stash.
+
+## Self-check before finishing
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q` (cwd = worktree root) →
+   exit code 0 (exit code is truth; dots-only output is expected — `-q` on top of `addopts=-q`).
+2. `ruff check .` + `ruff format --check .` → clean.
+3. Your new tests cover: admission 503+Retry-After math; healthz <1 s under a sleeping stub backend;
+   deadline partial result; metrics p50/p95 exact on known inputs; timers complete.
+4. Concurrency sanity: ThreadPoolExecutor(8) vs max_inflight=2 — no deadlock, counters consistent.
+5. Write `result.json` at worktree root:
+   `{"task": "r15-d", "status": "ok", "files_changed": [...], "tests_run": N, "tests_note": "...",
+     "summary": "...", "deviations": [...]}`
+
+Start editing files within ~10 minutes. If blocked >15 min on the same error: stop, write result.json
+with status "blocked" + what you tried. Budget: ~60 min.

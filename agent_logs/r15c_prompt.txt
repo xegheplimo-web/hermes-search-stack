@@ -1,0 +1,46 @@
+# R15-C — Local-first answer path v1 (Devin)
+
+You are working in your own git worktree. Read `analysis/r15-interfaces.md` §0 + §3 FIRST — frozen
+contract; implement exactly. Repo context: `hermes-search-stack` — the gateway answers web queries;
+`data/vn-geo.db` (live) holds 1,533 VN business entities (SearchStore format); `vn_geo.business` has
+`query_entities(db_path, text, area, category, limit)`.
+
+## Mission
+Build the local-first bridge module + MCP surface so the answer path CAN consult VN local data before
+the web (the engine hook itself is a LATER orchestrator task — you must NOT touch engine.py).
+
+## Scope (write ONLY these)
+- `gateway/core/local_context.py` — NEW module, API + guards exactly per §3:
+  `build_local_evidence(query, *, db_path=None, limit=8, min_confidence=0.5) -> list[LocalEvidence]`.
+  READ-ONLY sqlite (URI `file:<path>?mode=ro`); folded text match (reuse `searchstore.store.fold_d`
+  semantics); confidence = 0.4 name + 0.2 area + 0.2 address + 0.2 coords (clamp 0–1);
+  **ambiguity guard**: same folded name + different normalized addresses → separate items flagged
+  `ambiguous=True`, NEVER merged; deterministic order (confidence desc, entity_id asc); db missing →
+  empty list (no exception).
+- `gateway/mcp/tools.py` — add `"business"` to `_VN_KINDS` + handler in `hermes_vn` (query vn-geo.db,
+  return `{"ok","kind","count","items"}`; missing db → `{"ok": False, "error": "vn-geo.db not found at <path>"}`).
+  Existing kinds stay byte-compatible.
+- NEW test files under `tests/gateway/` and/or `tests/mcp/` (new files only).
+
+## Do NOT
+- Edit `gateway/core/engine.py` (frozen for wave 1 — D owns it; the hook is C2). No edits to
+  `vn_geo/*` (import only), `searchstore/*`, other gateway core files. NEVER write `data/vn-geo.db`
+  (live) — tests use tmp dbs (`data/r15-c-test.db` or tmp_path) built via
+  `vn_geo.business.upsert_entity` with pre-filled coords (no network).
+- Read/copy anything outside your worktree. Never commit/push/branch/stash.
+
+## Self-check before finishing
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q` (cwd = worktree root) →
+   exit code 0 (exit code is truth; dots-only output expected).
+2. `ruff check .` + `ruff format --check .` → clean.
+3. Tests cover: match + confidence math; below-threshold excluded; ambiguous same-name/different-
+   address → 2 flagged items, never merged; db missing → graceful empty; read-only proof (db file
+   unchanged after call); MCP `hermes_vn kind="business"` returns items via a fake engine + tmp db.
+4. Manual sanity: run a tiny script (scratch, inside worktree) against a tmp db copy — paste command +
+   observed output into result.json.
+5. Write `result.json` at worktree root:
+   `{"task": "r15-c", "status": "ok", "files_changed": [...], "tests_run": N, "tests_note": "...",
+     "summary": "...", "deviations": [...]}`
+
+Start editing files within ~10 minutes. If blocked >15 min on the same error: stop, write result.json
+with status "blocked" + what you tried. Budget: ~50 min.

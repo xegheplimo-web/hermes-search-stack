@@ -1,0 +1,47 @@
+# R15-E — Ward polygons pilot (OpenCode)
+
+You are working in your own git worktree. Read `analysis/r15-interfaces.md` §0 + §4 FIRST — frozen
+contract; implement exactly. Repo context: `hermes-search-stack` — `vn_geo/boundaries.py` already
+handles 34-province polygons (point_in_geometry, fetch/load patterns, GISData source pinned). You add
+the WARD level for 2 pilot provinces.
+
+## Mission
+Ward-level polygon layer v1: fetch + load + locate for Hải Phòng and Hà Nội, reusing boundaries.py
+utilities (import-only — that file is FROZEN).
+
+## Scope (write ONLY these)
+- `vn_geo/wards.py` — NEW module per §4: `fetch_wards(provinces, cache_dir, force=False)`,
+  `load_wards(cache_dir)`, `ward_at(lat, lon, cache_dir) -> {"province","ward_name","ward_code","unit_id"} | None`
+  (bbox pre-filter + `boundaries.point_in_geometry`; None outside coverage).
+- `data/boundaries/wards/**` — NEW (committed pilot data; ≤ ~30 MB total). Include `SOURCE.md` with the
+  pinned repo commit SHA + raw URL pattern.
+- NEW tests under `tests/vn_geo/` (e.g. `test_wards.py`) + `tests/fixtures/wards/**` (tiny hand-made
+  fixture polygons).
+
+## Source recon (do this first)
+`thanglequoc/vietnamese-provinces-database` — GIS add-on with ward-level GeoJSON (per-unit files).
+Pin an exact commit SHA (use the GitHub API or raw URLs; record BOTH in the module docstring +
+SOURCE.md). Fetch ONLY the 2 pilot provinces' ward files. If the add-on layout differs from expectation,
+adapt — but stay within the 2-province pilot and keep the API above.
+
+## Constraints
+- Live network ONLY via `fetch_wards()` manual runs — pytest must stay hermetic (fixtures only).
+- Do NOT modify `vn_geo/boundaries.py`, `refresh.py`, `goong.py`, or anything else. Import-only.
+- NEVER write `data/vn-geo.db`. Read/copy nothing outside your worktree. Never commit/push/branch/stash.
+- `data/boundaries/wards/` is PRE-EMPTY in your worktree — you create it; commit footprint stays ≤ ~30 MB.
+
+## Self-check before finishing
+1. `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -m pytest -q` (cwd = worktree root) →
+   exit code 0 (exit code is truth; dots-only output expected).
+2. `ruff check .` + `ruff format --check .` → clean.
+3. Manual live check (outside pytest): fetch both pilot provinces, then `ward_at` a known Hải Phòng
+   city-center point (e.g. ~20.86, 106.68) — must return a ward dict. Paste command + observed output
+   into result.json.
+4. Fixture tests cover: inside/outside/edge point; idempotent fetch (fixture mode); missing cache →
+   graceful None.
+5. Write `result.json` at worktree root:
+   `{"task": "r15-e", "status": "ok", "files_changed": [...], "tests_run": N, "tests_note": "...",
+     "summary": "...", "deviations": [...]}`
+
+Start editing files within ~10 minutes. If blocked >15 min on the same error: stop, write result.json
+with status "blocked" + what you tried. Budget: ~60 min.
