@@ -107,10 +107,11 @@ def test_hermes_places_text_query_and_id_url_mapping(engine, places_db):
     out = _tool(engine, places_db)("phở")
     assert out["ok"] is True and out["count"] == 1
     place = out["places"][0]
-    # id = doc url (vn://<source>/<source_id-slug>); pre-r16-b rows carry no
-    # source_url, so url falls back to id.
+    # id = doc url (vn://<source>/<source_id-slug>); with r16-b merged the row
+    # carries source_url, so url prefers it (fallback to id is covered in
+    # test_hermes_places_enrichment_passthrough).
     assert place["id"] == "vn://google-maps/gmaps-yd-001"
-    assert place["url"] == place["id"]
+    assert place["url"] == "https://www.google.com/maps/place/pho-bo-gia-truyen-yen-dung"
     assert place["name"] == "Phở Bò Gia Truyền Yên Dũng"
     assert place["source"] == "google-maps"
     assert place["lat"] == 21.20712 and place["lon"] == 106.23691
