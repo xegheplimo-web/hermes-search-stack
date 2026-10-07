@@ -1,0 +1,36 @@
+{
+  "task": "r14-a — vn_geo/boundaries.py (34-province boundary layer: fetch + ingest + locate + point-in-polygon)",
+  "files_created": [
+    "vn_geo/boundaries.py",
+    "tests/test_boundaries.py",
+    "tests/fixtures/r14a/square.geojson",
+    "tests/fixtures/r14a/square_hole.geojson",
+    "tests/fixtures/r14a/multipolygon.geojson",
+    "tests/fixtures/r14a/provinces_mini.geojson",
+    "agent_logs/r14a_result.json"
+  ],
+  "tests_summary": {
+    "new_tests": "tests/test_boundaries.py — 33 passed (pip, holes, multipolygon, centroid fallback incl. needle polygon, fetch cache/404/size-check via monkeypatched _http_get, ingest counts/schema/idempotency/updated, lookup name+code+folded, admin_code match vs None, locate hit/miss/notch, centroid round-trip, CLI)",
+    "existing_suite": "unchanged by this task; all non-goong tests green (950 total incl. my 33)",
+    "preexisting_failures": "tests/test_vn_geo_goong.py: 28 FAILED — environmental, unrelated to this change: shared quota file %LOCALAPPDATA%/hermes/vn-geo/goong_usage.json reads {date: 2026-10-07, count: 1000} (cap reached, likely by a parallel session). My diff adds only untracked files; goong.py untouched.",
+    "ruff": "ruff check . clean; ruff format --check . clean (179 files)"
+  },
+  "acceptance_selfcheck": {
+    "fetch": "ONE live fetch of the pinned SOURCE_URL -> data/boundaries/Provinces.geojson, exact 15,927,181 bytes (expected ±1%), sha256 d8a06b4d3a0e5612ec3319afed4c75ff7ffc46e6ffd82e9e40df24090133a664 recorded in meta.source_sha256",
+    "ingest": "ingest(data/r14-a-test.db) -> {provinces: 34, new: 34, updated: 0, unchanged: 0}; re-run -> unchanged: 34 (idempotent); data/vn-geo.db never touched",
+    "locate": "(21.0285,105.8542)->Hà Nội ha-noi; (16.047,108.219)->Đà Nẵng da-nang; (20.844,106.688)->Hải Phòng hai-phong",
+    "round_trip": "locate(centroid) == same code for ALL 34 provinces: 34/34",
+    "fixtures": "square, square-with-hole (point-in-hole == False asserted), multipolygon, plus provinces_mini (square + C-shape centroid-fallback + multipolygon)",
+    "cli": "python -m vn_geo.boundaries fetch|ingest|lookup|locate|list verified end-to-end"
+  },
+  "notes": [
+    "SOURCE-DATA BUG found in the pinned file (handled, not silently): feature Ma=='31' is labeled TinhThanh=='Lạng Sơn' but its geometry is Đồng Tháp (bbox 105.18-106.82E / 10.13-10.97N Mekong Delta; real Lạng Sơn is Ma=='11' at 21.3-22.5N). Đồng Tháp is otherwise absent. Without correction the two 'Lạng Sơn' features collide on slug 'lang-son' -> only 33 provinces. Fixed via documented _NAME_FIXES {('31','Lạng Sơn'): 'Đồng Tháp'}; corrected feature keeps source_props_code='31' and meta.source_name_raw='Lạng Sơn' for provenance.",
+    "admin_code: matched by folded name (strip leading Tỉnh/Thành phố/TP.) against admin_units v2 province docs (provider='provinces-api', format='admin', meta.level='province', version==2 preferred) present in the SAME db — the only hermetic reading of the contract, since admin_units.py holds no static list. Fresh scratch dbs therefore yield admin_code=None until admin_units is ingested there; tested both ways.",
+    "Document provider='gisdata' (url scheme vn://boundary, format 'boundary'); spec didn't pin the provider string — documented in module docstring.",
+    "centroid: bbox-center -> 100x100 grid (spec) -> extra deterministic scanline-intersection fallback so thin/concave shapes can never round-trip-fail (needle test covered).",
+    "locate prefilters by document-meta bbox so only candidate geometries get parsed; falls back to all rows when meta missing.",
+    "area_km2 is a planar shoelace approximation scaled by km/deg at the bbox-center latitude (documented approximation, not the source Dtich_km2 land area).",
+    "Cache: data/boundaries/Provinces.geojson (gitignored). fetch_source returns the cache when present; force=True re-downloads; 404 on raw.githubusercontent retries the pinned sha via github.com/.../raw/ per contract.",
+    "Toolchain-setup hook deliberately not run: task card restricts writes to the listed scope files only."
+  ]
+}
