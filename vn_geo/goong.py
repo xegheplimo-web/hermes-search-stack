@@ -38,6 +38,21 @@ def _default_dir() -> Path:
     return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "hermes" / "vn-geo"
 
 
+USAGE_ENV_VAR = "HERMES_VN_GEO_GOONG_USAGE"
+
+
+def _default_state_path() -> Path:
+    """Default usage-state file, honoring the ``HERMES_VN_GEO_GOONG_USAGE`` override.
+
+    Resolved lazily on each call (never at import) so tests can monkeypatch
+    the env var. When unset/empty, exactly the legacy default is returned.
+    """
+    override = os.environ.get(USAGE_ENV_VAR)
+    if override:
+        return Path(override)
+    return _default_dir() / "goong_usage.json"
+
+
 # --------------------------------------------------------------------------- key resolution
 
 
@@ -92,8 +107,19 @@ class DailyLimiter:
     """
 
     def __init__(self, state_path: str | Path | None = None, daily_limit: int = DEFAULT_DAILY_LIMIT):
-        self._state_path = Path(state_path) if state_path is not None else _default_dir() / "goong_usage.json"
+        self._explicit_state_path = Path(state_path) if state_path is not None else None
         self._daily_limit = daily_limit
+
+    @property
+    def _state_path(self) -> Path:
+        """Resolve the state file lazily so env override applies per read/write."""
+        if self._explicit_state_path is not None:
+            return self._explicit_state_path
+        return _default_state_path()
+
+    @_state_path.setter
+    def _state_path(self, value: str | Path) -> None:
+        self._explicit_state_path = Path(value)
 
     def _today(self, today: str | None = None) -> str:
         return today if today is not None else datetime.date.today().isoformat()
