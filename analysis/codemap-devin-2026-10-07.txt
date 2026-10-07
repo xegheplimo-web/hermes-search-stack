@@ -1,0 +1,625 @@
+Skip to main content
+Hermes Search Stack: VN Business Search với Local-First Architecture
+Sharing
+Anyone with the link
+Open in Devin Desktop
+Traces
+Diagram
+Hermes Search Stack: VN Business Search với Local-First Architecture
+
+Hệ thống tìm kiếm doanh nghiệp/địa điểm Việt Nam với pipeline ingestion (normalize→geocode→dedupe), entity resolution non-destructive, local-first query path ưu tiên DB nội bộ, và gateway OpenAI-compatible. Notable flows: business ingestion [1d], entity deduplication [2c], local evidence merge [3e], và full answer pipeline [4c].
+
+1
+Business Entity Ingestion: Normalize → Geocode → Dedupe-Upsert
+
+vn_geo.business pipeline - chuyển raw connector data thành entity schema v1, geocode qua Goong/Nominatim, rồi upsert với deduplication vào SearchStore. See guide
+
+AI generated guide
+Business Entity Ingestion Pipeline
+Motivation
+
+Khi xây dựng công cụ tìm kiếm doanh nghiệp/địa điểm Việt Nam, bạn cần nhập dữ liệu từ nhiều nguồn khác nhau: masothue.com (mã số thuế), CKAN tỉnh (dữ liệu mở), gosom (Google Maps scraper). Mỗi nguồn có format riêng, chất lượng khác nhau (có nguồn thiếu tọa độ, có nguồn sai encoding). Pipeline này giải quyết 3 vấn đề cốt lõi:
+
+Chuẩn hóa: Chuyển raw data thành entity schema v1 thống nhất
+Bổ sung tọa độ: Geocode qua Goong API hoặc OSM Nominatim cho records thiếu lat/lng
+Chống trùng: Idempotent upsert - chạy lại không tạo bản ghi duplicate
+Details
+Normalize: Raw → Entity Schema v1 [1a]
+
+vn_geo.business.normalize() nhận dict từ connector và source name, trả về entity dict chuẩn. Function này:
+
+Extract fields qua _pick_str(), _pick_float(), _pick_int() [1a] để handle variants ("name" vs "title" vs "ten")
+Map category qua categories.classify() từ raw label sang canonical category + confidence
+Generate deterministic entity_id [1b] từ (source, source_id, name, address) - cùng input → cùng ID, đây là key cho deduplication
+
+Entity schema v1 bao gồm: entity_id, name, address_text, lat/lng, category, status, source, tax_code, timestamps.
+
+Geocode Chain: Goong → Nominatim → Approximate [1c]
+
+geocode() resolve tọa độ theo thứ tự ưu tiên:
+
+Goong API nếu có GOONG_API_KEY (1000 req/day limit, enforce ở code)
+OSM Nominatim fallback với ≥1.5s politeness
+Nếu cả 2 fail → geocode_status="approximate" với lat/lng=None
+
+Records đã có tọa độ pass-through với geocode_status="exact".
+
+Dedupe-Upsert: Content-Addressed Versioning [1d]
+
+upsert_entity() ghi vào SearchStore (SQLite append-only) [1e]:
+
+Lookup existing record theo entity_id
+So sánh content_sha256 - nếu content không đổi thì chỉ update checked_at, không tạo row mới
+Nếu content thay đổi → append version mới + emit entity_changed event
+
+Kết quả: re-run unchanged data adds 0 rows - đã verify 3 lần chạy refresh → 0 new. SearchStore [1f] ensure entity schema (entities view) mỗi lần mở DB.
+
+Idempotency Guarantee
+
+Pipeline này idempotent end-to-end: cùng input từ connector → cùng entity_id [1b] → cùng content_sha256 → không tạo duplicate. Đây là nền tảng cho weekly cron refresh mà không lo spam DB.
+
+Connector Input (masothue/CKAN/gosom raw)
+1a
+Entry: normalize connector input
+business.py:122
+def normalize(conn_input: dict, source: str) -> dict:
+_pick_str/float/int() extraction
+categories.classify() mapping
+1b
+Generate stable entity_id
+business.py:149
+"entity_id": _store.entity_id_for(source, source_id, name, address_text),
+fold_text + hash generation
+Geocoding Chain
+1c
+Geocode chain: Goong → Nominatim
+business.py:265
+def geocode(entity: dict) -> dict:
+_goong_geocode() if key available
+_nominatim_geocode() OSM fallback
+set geocode_status + confidence
+Dedupe-Upsert to SearchStore
+1d
+Dedupe-upsert vào SearchStore
+business.py:301
+def upsert_entity(db_path: str, entity: dict) -> str:
+SearchStore(db_path).__enter__()
+1f
+SearchStore ensures entity schema
+store.py:119
+ensure_entity_schema(self._conn)
+1e
+Delegate to SearchStore entity_upsert
+business.py:314
+return _store.entity_upsert(store, ent)
+lookup existing by entity_id
+compare content_sha256
+emit entity_changed if diff
+Result: entity_id returned (idempotent)
+2
+Cross-Source Entity Resolution: Non-Destructive Alias Events
+
+vn_geo.resolve - match entities từ nhiều nguồn theo tax_code/name_exact/fuzzy rules, emit entity_aliased events mà không phá dữ liệu gốc. See guide
+
+AI generated guide
+Motivation
+
+Khi thu thập dữ liệu doanh nghiệp từ nhiều nguồn (masothue, CKAN Hải Phòng, CKAN Tây Ninh, gosom scraper), cùng một doanh nghiệp sẽ xuất hiện nhiều lần với format khác nhau. Ví dụ: "Công ty TNHH ABC" từ masothue và "CONG TY TNHH ABC" từ CKAN có thể là cùng một thực thể. Nếu không dedupe, user query "công ty ABC" sẽ trả về nhiều bản ghi trùng lặp.
+
+Entity resolution (vn_geo/resolve.py) giải quyết vấn đề này bằng cách tìm các cặp entity giống nhau và ghi nhận chúng là aliases của nhau, nhưng không bao giờ xóa hay ghi đè dữ liệu gốc [2e]. Đây là thiết kế "non-destructive" quan trọng: mỗi nguồn giữ nguyên bản ghi của mình, chỉ có metadata liên kết được thêm vào.
+
+Details
+
+Matching rules chạy theo thứ tự ưu tiên từ cao xuống thấp [2a]:
+
+Tax code exact match [2b]: So sánh mã số thuế sau khi chuẩn hóa (chỉ giữ chữ số). Đây là signal mạnh nhất vì MST là unique identifier chính thức.
+
+Folded name exact + area hint [2c]: Tên sau khi bỏ dấu (fold_text) phải giống hệt nhau, VÀ nếu cả hai có thông tin tỉnh/phường thì phải khớp nhau. Ví dụ: "cong ty abc" ở Hải Phòng không match với "cong ty abc" ở Hà Nội.
+
+Fuzzy matching với Jaccard ≥ 0.8: Token overlap của tên phải ≥ 80%, VÀ phải được corroborate bởi address overlap ≥ 0.5 HOẶC tọa độ gần nhau ≤ 200m [2d]. Rule này bắt các trường hợp tên hơi khác (thêm/bớt từ) nhưng rõ ràng là cùng địa điểm.
+
+Blocking strategy tránh so sánh O(n²) toàn bộ: mỗi entity join vào bucket theo tax_key và bucket theo first_token của tên đã fold. Chỉ các cặp cùng bucket mới được evaluate. Trade-off: rule (c) có thể miss cặp ≥0.8 similar nếu token đầu khác nhau, nhưng đổi lại tốc độ nhanh hơn nhiều.
+
+Output là events, không phải rewrites: Khi tìm thấy match, hệ thống emit entity_aliased event với {canonical_entity_id, alias_entity_id, method, score} [2e]. Canonical = entity có fetched_at cũ nhất (tie break bằng lexicographic entity_id). Documents gốc không bị sửa. Query time sẽ dùng events này để chọn canonical record.
+
+Idempotent: Các cặp đã aliased (theo cả 2 chiều) bị skip, nên chạy lại resolve run trên cùng data sẽ báo aliases_new == 0.
+
+run() orchestrator
+_load_entities() from SearchStore
+Blocking: candidate generation
+Group by tax_key + first_token
+For each candidate pair:
+2a
+Matching rules priority: tax_code → name_exact → fuzzy
+resolve.py:145
+def _match(a: dict, b: dict) -> tuple[str, float] | None:
+2b
+Rule (a): tax_code exact match
+resolve.py:147
+if a["tax_key"] and a["tax_key"] == b["tax_key"]:
+2c
+Rule (b): folded name exact + area agreement
+resolve.py:149
+if a["folded_name"] and a["folded_name"] == b["folded_name"] and _same_area_hint(a, b):
+Rule (c): fuzzy Jaccard ≥0.8
+Name token overlap
+Address overlap ≥0.5
+2d
+Geo corroboration: haversine ≤ 200m
+resolve.py:138
+def _geo_close(a: dict, b: dict) -> bool:
+Skip if already aliased
+Determine canonical (oldest)
+Emit event
+2e
+Non-destructive: emit alias events
+resolve.py:59
+ALIAS_EVENT_KIND = "entity_aliased"
+ALIAS_EVENT_KIND
+Non-destructive guarantee
+Documents never rewritten/deleted
+3
+Local-First Query: VN Business Evidence Prepend
+
+gateway/core/local_context + engine - query local vn-geo.db READ-ONLY, score confidence, filter ambiguous, merge vào evidence list trước web sources. See guide
+
+AI generated guide
+Local-First VN Business Query: Ưu Tiên Dữ Liệu Nội Bộ
+Motivation
+
+Khi người dùng hỏi "quán ăn gần tôi" hoặc "cửa hàng điện máy ở khu này", hệ thống cần trả lời từ dữ liệu đã có sẵn trong database local trước khi gọi ra web. Điều này quan trọng vì:
+
+Tốc độ: DB local nhanh hơn web search hàng chục lần
+Chất lượng: Dữ liệu đã được normalize, geocode, và dedupe - sạch hơn raw web results
+Độ tin cậy: Entities từ masothue/CKAN có authority tier "registry" cao hơn aggregator sources
+
+Vấn đề: Gateway engine ban đầu chỉ có web search → extract → synthesis. Cần inject local evidence vào answer path mà không phá existing flow.
+
+Details
+Architecture: READ-ONLY Query Module
+
+gateway/core/local_context.py [3a] là module hoàn toàn read-only - mở vn-geo.db qua SQLite URI mode=ro [3b] để không bao giờ write/migrate. Database path resolve theo thứ tự: explicit arg → env HERMES_GATEWAY_VN_GEO_DB → default data/vn-geo.db.
+
+Module query documents_current table với format="entity" - cùng schema mà vn_geo.business đã upsert vào [1d, 1e].
+
+Confidence Scoring: Additive 4-Component Model
+
+Mỗi entity được score theo 4 signals cộng dồn [3b]:
+
++0.4 nếu query tokens match entity name (signal mạnh nhất)
++0.2 nếu match area (province hoặc area_old)
++0.2 nếu match address_text
++0.2 nếu có tọa độ lat/lng (coords-present bonus)
+
+Score clamp [0, 1]. Entities dưới min_confidence (default 0.5) bị loại. Text matching dùng folded tokens - fold_text() từ vn_geo.categories strip diacritics + casefold, rồi extract [0-9a-z]+ runs.
+
+Ambiguity Guard: Never Merge Different Addresses
+
+Critical safety rule [3c]: Nếu nhiều entities có cùng folded name nhưng khác normalized address, chúng được flag ambiguous=True và emit riêng biệt - không bao giờ merge/collapse. Ví dụ: "Nhà hàng Hương Sen" ở Hà Nội vs "Nhà hàng Hương Sen" ở Hải Phòng phải là 2 items riêng.
+
+Ambiguous items bị filter out khi merge vào evidence [3e] - chỉ non-ambiguous entities được prepend.
+
+Authority Tier: Registry > Aggregator
+
+Source classification [3d]:
+
+"registry": entities từ masothue hoặc ckan* sources (CKAN open data portals) - độ tin cậy cao
+"aggregator": còn lại (Google Maps scrapes, OSM, etc.)
+
+Tier này expose cho synthesis model để weight sources accordingly.
+
+Engine Integration: Prepend After Trust Ordering
+
+Hook _merge_local_evidence() [3e, 3f] được gọi trong engine.run_iter() sau khi web extract + trust ordering xong, trước synthesis. Flow:
+
+Web search → extract URLs → trust_order() sắp sources theo trust score
+Local evidence prepend: query local DB, filter ambiguous, convert sang EvidenceItem format
+_renumber_evidence() đánh lại ids 1..N - local items 1..k, web items k+1..
+Synthesis nhận merged evidence list với local ở đầu
+
+Cả fast và deep modes đều có local merge [3f] - không phải deep-only feature. Optional work - skip nếu deadline exceeded.
+
+Error Handling: Graceful Degradation
+
+Missing/unreadable DB → return [] empty list, không raise exception. Local evidence must never break the answer pipeline - nếu có lỗi thì degrade về web-only mode như cũ.
+
+Cache-first check
+Resolve DB path (env/default)
+_connect_ro() READ-ONLY mode
+_load_entity_metas()
+Query documents_current
+Score & filter entities
+_tokens() fold query
+_confidence() additive scoring
++0.4 name match
++0.2 area match
++0.2 address match
++0.2 coords present
+Filter by min_confidence threshold
+3c
+Ambiguity guard: same name, different address
+local_context.py:175
+def _mark_ambiguous(items: list[_ScoredEntity]) -> None:
+Flag same name + diff address
+Authority classification
+Check masothue/CKAN → "registry"
+Else → "aggregator"
+Build LocalEvidence list
+Return to engine
+Engine merge hook
+Filter out ambiguous items
+Convert to EvidenceItem format
+Prepend local before web evidence
+_renumber_evidence() 1..N
+4
+Gateway Answer Pipeline: Cache → Probe → Depth → Extract → Synth
+
+gateway/core/engine - full answer flow từ cache check, probe search, depth decision, evidence extraction, đến synthesis streaming với xhigh verification. See guide
+
+AI generated guide
+Gateway Answer Pipeline Guide
+Motivation
+
+Khi user hỏi "quán ăn gần tôi" hoặc "tin tức mới nhất về X", hệ thống cần trả lời có nguồn trích dẫn trong ~10 giây thay vì chỉ trả text thuần. Gateway answer pipeline giải quyết bài toán này bằng cách orchestrate: (1) tìm kiếm web qua managed Perplexity, (2) extract nội dung từ URLs, (3) merge dữ liệu local VN, (4) synthesize câu trả lời có citation, (5) verify claims và cache kết quả. Pipeline phải không bao giờ crash - mọi lỗi (backend down, synthesis fail, verification timeout) đều degrade gracefully thành warnings thay vì exception [4a-4h].
+
+Details
+Cache-First Architecture
+
+Pipeline bắt đầu bằng AnswerCache lookup [4a] - nếu có fresh verified pack (từ deep run trước), serve ngay không cần live calls. Cache hit trả lời trong ~0.09s vs ~10.8s live. Stale cache (age > TTL) trigger refresh với warning.
+
+Probe & Depth Decision
+
+Probe search [4b] chạy 1 query đầu tiên để depth policy quyết định fast/deep mode. depth_policy.decide() [4c] dựa trên signals: query markers (multi_part, time_sensitive), result counts, errors. Fast mode = top 4 extracts, deep mode = ≤3 sub-queries + ≤8 extracts với trust ordering.
+
+Evidence Building
+
+Deep path [4d] chạy semantic planner để decompose query thành sub-questions, sau đó search song song qua ultra pool hoặc serial fallback. Extract [4e] dùng keyless chain (Exa → Parallel → Keenable free tiers) với retry logic. Trust ordering xếp sources theo trust.py scoring (official > news > commercial).
+
+Local-first merge prepend dữ liệu VN từ vn-geo.db vào evidence list - entities có confidence ≥0.5 và không ambiguous được ưu tiên trước web sources, sau đó renumber all ids 1..N.
+
+Synthesis & Streaming
+
+synth.stream() [4f] gọi config-driven LLM (default opencode-go deepseek-flash) với evidence list, yield delta events từng piece để client render real-time. Fallback: nếu synth unavailable hoặc produce empty text → serve source list only với warning.
+
+xhigh Verification (Deep Only)
+
+Deep + xhigh_enabled mode chạy claim verification [4g]: extract claims từ draft 1, verify against evidence (citation presence, overlap ≥15%), tính confidence (high/medium/low). Nếu có unsupported claims và budget còn, conditional revise pass search ≤2 issue claims, extract ≤2 new URLs, re-draft với REVISION REQUIRED block, re-verify - chỉ accept draft 2 nếu issue count giảm strict.
+
+Publishing
+
+Deep mode cuối cùng chạy fact_check gate [4h] (mechanical: citation format, coverage, freshness), build research_pack.v1 (ledger + trust report + fact_check + draft), rồi AnswerCache.put() để lần sau cache hit. Publish là optional work - deadline exceeded thì skip và return partial result với warning.
+
+Reliability Guarantees
+
+Watchdog deadline (default 180s) check giữa các stages - nếu vượt thì skip optional work (extra searches, verification, publish) và return best available result. Admission control giới hạn max_inflight concurrent requests, queue cap → HTTP 503 + Retry-After khi quá tải. Health isolation: /healthz never touches engine/backend, answer <1s ngay cả khi backend busy.
+
+Cache Layer
+4a
+Step 1: Cache-first check
+engine.py:278
+if allow_cache:
+_cache_get() → fresh pack serve
+Probe & Depth Decision
+4b
+Step 2: Probe search (1 query)
+engine.py:295
+probe = self._safe_search(query, self.config.fast_max_results, errors, warnings)
+build_signals()
+4c
+Step 3: Depth policy decision
+engine.py:314
+decision = decide(signals)
+depth_policy → fast/deep mode
+Evidence Building (Deep Path)
+4d
+Step 4: Deep path sub-searches
+engine.py:341
+if mode == "deep" and not deadline_passed():
+_run_planner() → sub-queries
+_ultra_sub_searches() (parallel)
+for q in sub_queries (serial)
+4e
+Step 5: Extract evidence from URLs
+engine.py:389
+evidence = self._extract_evidence(urls, search_items, errors, warnings)
+keyless chain (Exa/Parallel)
+_merge_local_evidence() [trace 3]
+Synthesis Streaming
+4f
+Step 6: Synthesis streaming
+engine.py:431
+for piece in synth.stream(query, evidence, deep=(mode == "deep")):
+yield delta event
+xhigh Verification (Deep Only)
+4g
+Step 7: xhigh claim verification
+engine.py:457
+report = self._verify_claims(answer, evidence)
+extract_claims()
+verify_claims() → report
+_revise_pass() (conditional)
+Publish (Deep Only)
+4h
+Step 8: Deep only - fact_check gate → publish
+engine.py:488
+self._verify_and_publish(query, answer, evidence, trust_by_url, warnings)
+fact_check gate
+research_pack.build_pack()
+AnswerCache.put()
+5
+Spatial Coverage Planning: Boundaries → Deterministic Grid → Job Expansion
+
+vn_geo/boundaries + coverage - load province polygons, generate deterministic grid cells với point-in-polygon filter, expand thành per-category crawl jobs. See guide
+
+AI generated guide
+Motivation
+
+Khi bạn muốn thu thập dữ liệu địa điểm/doanh nghiệp cho toàn bộ một tỉnh (ví dụ Hải Phòng 3,091 km²), bạn cần một danh sách tọa độ cụ thể để quét. Không thể quét ngẫu nhiên vì: (1) lãng phí API calls vào vùng biển/núi không có dữ liệu, (2) không reproducible - chạy lại sẽ thiếu hoặc trùng vùng, (3) không biết đã quét xong chưa.
+
+Spatial coverage planner giải quyết vấn đề này bằng cách tạo lưới ô vuông deterministic được clip theo ranh giới polygon thật của tỉnh, cho ra danh sách tọa độ stable có thể resume khi bị gián đoạn [5d].
+
+Details
+Boundary Truth
+
+Module vn_geo/boundaries [5a] load 34 tỉnh post-2025 từ pinned GeoJSON source (GISData commit 7645534d). Mỗi tỉnh có:
+
+Polygon geometry (hole-aware) - đây là truth
+Bbox (W,S,E,N) - chỉ là envelope để tính toán nhanh
+
+Quan trọng: polygon ≠ bbox. Bbox chứa cả biển/vùng láng giềng, nên phải filter.
+
+Grid Generation
+
+vn_geo/coverage._grid() [5b] tính lưới deterministic:
+
+Origin = bbox min corner làm tròn 3 chữ số thập phân [5d]
+dlat = cell_km / 111.32 (1° latitude ≈ 111.32 km)
+dlon = cell_km / (111.32 × cos(center_lat)) - có correction vì longitude hẹp dần về cực
+
+Mỗi cell có cell_id = area:ix_iy [5d] với ix, iy là indices tương đối origin (có thể âm). Cùng input → cùng cell_id → resumable.
+
+Polygon Clipping
+
+Không phải mọi cell trong bbox đều nằm trong tỉnh. Filter rule [5c]: giữ cell khi CENTER của nó pass point_in_geometry() check. Điều này:
+
+Loại cells rơi vào biển/tỉnh bên cạnh
+Hole-aware (ví dụ hồ/khu cấm trong tỉnh)
+Deterministic - cùng grid → cùng kết quả
+Job Expansion
+
+Sau khi có danh sách cells, expand [5e] nhân với categories:
+
+Mỗi cell × mỗi category = 1 crawl job
+job_id = cell_id|category (ví dụ hai-phong:81_0|food)
+Output JSONL với lat/lon/query cho mỗi job
+
+Ví dụ thực tế: Hải Phòng @ 2 km cell size → 769 cells × 2 categories = 1,538 jobs. Re-plan với cell size khác → diff cleanly vì cell_id stable.
+
+Usage Pattern
+# 1. Ingest boundaries (once)
+python -m vn_geo.boundaries ingest --db data/vn-geo.db
+
+# 2. Plan grid for province
+python -m vn_geo.coverage plan --db data/vn-geo.db \
+  --area hai-phong --cell-km 2.0 --out plan.json
+
+# 3. Expand to jobs
+python -m vn_geo.coverage expand --plan plan.json \
+  --categories "food,lodging" --out jobs.jsonl
+
+
+Kết quả: deterministic, resumable manifest để feed vào crawler (gosom/Overpass/etc).
+
+Province Boundary Data
+5a
+Boundaries module: 34 provinces post-2025 merger
+boundaries.py:1
+"""vn_geo.boundaries — province polygons + bbox + point-in-polygon (R14-A).
+Load 34 provinces GeoJSON
+province_bbox() → (W,S,E,N)
+point_in_geometry() checker
+Grid Generation (vn_geo/coverage)
+5b
+Grid calculation: origin + dlat/dlon
+coverage.py:84
+def _grid(bbox: tuple[float, float, float, float], cell_km: float) -> tuple[float, float, float, float]:
+origin = bbox_min rounded 3dp
+dlat = cell_km / 111.32
+dlon with cos(lat) correction
+Generate candidate cells
+5d
+Cell ID: deterministic, resumable
+coverage.py:14
+- ``cell_id = f"{area_code}:{ix}_{iy}"`` (indices are relative to origin and
+5c
+Polygon clipping: center must be inside
+coverage.py:17
+- keep a cell iff its CENTER passes ``boundaries.point_in_geometry``.
+point_in_geometry(center)
+Keep if TRUE (hole-aware)
+Job Expansion
+5e
+Job expansion: cell × categories
+r14-user-guide.md:98
+- `expand` fans each cell into one job per category
+For each cell in plan
+For each category
+job_id = cell_id|cat
+Output: JSONL crawl manifest
+6
+Data Freshness & Versioning: SearchStore Append-Only + Diff Events
+
+searchstore/store - content-addressed versioning, idempotent ingest (unchanged content = 0 new rows), events audit log cho diff tracking. See guide
+
+AI generated guide
+Motivation
+
+Hệ thống cần theo dõi thay đổi dữ liệu doanh nghiệp/địa điểm theo thời gian mà không tạo duplicate records. Khi quét lại cùng một khu vực (ví dụ: quán ăn ở Yên Dũng), cần biết: quán nào mới mở? quán nào đóng cửa? quán nào đổi rating/giờ mở cửa?
+
+Vấn đề: nếu mỗi lần quét tạo bản ghi mới, database sẽ đầy duplicate. Nếu update in-place, mất lịch sử thay đổi. SearchStore giải quyết bằng content-addressed versioning: chỉ tạo version mới khi content thực sự thay đổi, và emit events để track diff.
+
+Details
+Content-Addressed Deduplication
+
+SearchStore dùng url_key + content_sha256 làm identity [6a, 6b]. Khi ingest một document:
+
+Tính url_key (normalize URL: lowercase scheme+host, strip fragment)
+Tính content_sha256 (hex SHA-256 của text)
+Query existing: SELECT id WHERE url_key = ? AND content_sha256 = ?
+Nếu tìm thấy → return existing id, không INSERT [6b]
+Nếu không tìm thấy → INSERT row mới + emit document_ingested event [6c]
+
+Kết quả: chạy lại refresh với unchanged data → 0 rows added. Đã verify 3 lần chạy liên tiếp trả về 0 new records.
+
+Event-Based Diff Tracking
+
+Mỗi thay đổi phát event vào events table [6c]:
+
+document_ingested: document mới
+entity_changed: entity content thay đổi
+entity_aliased: cross-source deduplication
+
+Business layer có diff_events() [6d] đọc events since last consumption. Watermark lưu trong kv table → idempotent: gọi 2 lần liên tiếp, lần 2 trả về 0 events.
+
+Freshness Contract
+
+Mỗi entity mang timestamps [6e]:
+
+first_seen: lần đầu xuất hiện
+last_seen: lần cuối thấy từ source
+checked_at: lần cuối verify
+
+Stale rule: nếu checked_at cũ hơn TTL (ví dụ: 90 ngày cho places) → entity được flag stale=True, không bao giờ serve im lặng như current data. Consumer phải re-verify hoặc báo staleness cho user.
+
+Append-Only Architecture
+
+Documents không bao giờ bị xóa hay overwrite. Version mới = INSERT row mới với cùng url_key nhưng khác content_sha256. View documents_current lọc latest version per url_key. Điều này cho phép:
+
+Time-travel queries (xem entity lúc nào đó)
+Safe rollback (revert về version cũ)
+Audit trail đầy đủ
+Ingest Flow (searchstore/store.py)
+6a
+Ingest document: content-addressed dedup
+store.py:136
+def ingest_document(
+url_key + content_sha256 compute
+6b
+Check existing: url_key + sha256
+store.py:149
+row = self._conn.execute(
+[if exists] return existing id
+6c
+Emit document_ingested event
+store.py:160
+self._record_event(
+_record_event() helper
+events table append
+Business Layer (vn_geo/business.py)
+upsert_entity() wrapper
+calls _store.entity_upsert()
+delegates to SearchStore
+6d
+Diff events: new/closed/changed
+business.py:331
+def diff_events(db_path: str) -> list[dict]:
+reads events since watermark
+updates kv consumption marker
+Freshness Contract (user guide)
+6e
+Freshness gate: TTL + stale flag
+r13-user-guide.md:99
+- Every record carries `first_seen`, `last_seen`, `checked_at`, and
+first_seen, last_seen
+checked_at timestamp
+TTL check → stale flag
+business.py
+store.py
+resolve.py
+local_context.py
+engine.py
+boundaries.py
+coverage.py
+r14-user-guide.md
+r13-user-guide.md
+vn_geo
+business.py
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+4
+5
+    geocode(entity: dict) -> dict                      # Goong -> 
+    Nominatim -> approximate
+    upsert_entity(db_path: str, entity: dict) -> str   # dedupe §2; 
+    returns entity_id
+    query_entities(db_path: str, text: str, area: str = "", category: 
+    str = "", limit: int = 20) -> list[dict]
+    diff_events(db_path: str) -> list[dict]            # new/closed/
+    changed since last run
+Entities persist in a single-file SearchStore SQLite database as
+``format="entity"`` documents (meta = the schema v1 dict), exposed 
+through
+the ``entities`` view — see ``searchstore.store`` entity helpers. FTS 
+queries
+always fold through ``searchstore.store.fold_d`` (R9-W2B hard rule: đ/Đ 
+is
+pre-folded into the index, so an unfolded accented query returns 0 
+hits).
+Geocode chain order per the R13-A task card: (1) Goong when a 
+GOONG_API_KEY
+is configured (not yet active — the branch is coded and stubbed in 
+tests),
+(2) OSM Nominatim with the project User-Agent and >= 1.5 s politeness,
+(3) no result -> ``geocode_status == "approximate"`` with null lat/lng.
+No live connector calls live here — fetch belongs to R13-B/R13-E
+(``vn_geo.connectors_*``); this module only normalizes connector inputs.
+"""
+from __future__ import annotations
+import json
+import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import UTC, datetime
+from typing import Any
+from searchstore import SearchStore, SearchStoreError
+from searchstore import store as _store
+from . import VnGeoError, categories, goong
+    normalize(conn_input: dict, source: str) -> dict   # -> entity 
+    schema v1 (§2)
+3
+Frozen contract: ``analysis/r13-interfaces.md`` §3::

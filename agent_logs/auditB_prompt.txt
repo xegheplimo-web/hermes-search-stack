@@ -1,0 +1,36 @@
+=== R-AUDIT CARD B — Configuration & operations surface audit (Cline / medium) ===
+
+You are the builder-tier agent in an orchestrated analysis round (R-AUDIT) on the Hermes Search Stack (repo + machine wiring around it). You audit CONFIGURATION + OPERATIONS and write ONE markdown file. READ-ONLY for everything else: do NOT modify any config, service, or repo file; no git; no installs; no restarts.
+
+PROJECT: C:/Users/atton/hermes-search-stack (your cwd; HEAD f189422, 2026-10-07).
+Claims to VERIFY yourself (not to trust): services live on :8787 (stack gateway, watchdog-managed), :8642 (Hermes api_server), :9222 (debug Chrome); watchdog tasks HermesSearchGateway (5-min) + HermesSearchGatewayLogon.
+
+DELIVERABLE: WRITE ONLY `analysis/audit-B-config-ops.md` (Vietnamese, 10–25 KB) + `agent_logs/auditB_result.json`. NO SECRET VALUES in the doc — key NAMES / presence only (e.g. "API_SERVER_KEY: đã set"). Max ~20 localhost calls.
+
+METHOD (suggested; read-only; use MSYS-bash or PowerShell — record what you actually ran and paste real outputs):
+- Hermes config: `grep -n -A14 '^web:' C:/Users/atton/AppData/Local/hermes/config.yaml`; likewise `^mcp_servers:`, `^platforms:`, `^browser:` (cdp_url), `^compression:`; `hermes cron list` (if that fails, try `hermes cronjobs list`; else list the cron dir `C:/Users/atton/AppData/Local/hermes/cron/`); `ls C:/Users/atton/AppData/Local/hermes/scripts/`.
+- Gateway: read `.env.gateway.example`; `ls gateway/backends/` + read backends docstrings; probes: `curl -s -m3 127.0.0.1:8787/healthz`, `curl -s -m3 127.0.0.1:8787/v1/models`, `curl -s -m3 -o /dev/null -w '%{http_code}' 127.0.0.1:8642/`; `netstat -ano | grep -E ':(8787|8642|9222)'`.
+- Watchdog: `schtasks /query /v /fo LIST` filtered for HermesSearch; read `.../scripts/hermes-search-gateway-watchdog.py` + `.cmd`; `tail -15` of `.../logs/hermes-search-gateway.log`; `cat data/refresh.log`.
+- Data: reuse the venv: `C:/Users/atton/hermes-search-stack/.venv/Scripts/python.exe -c "<read-only sqlite query>"` → table for data/*.db: bytes, documents / documents_current / events counts, formats, mtime, role (canonical vs test-artifact).
+- Deps: pyproject.toml, requirements-gateway.txt, requirements-dev.txt — summarize pins.
+
+SECTIONS (required)
+1. Phương pháp (commands run + date).
+2. Cấu hình Hermes liên quan stack — table: key → value (secret → "đã set") → vai trò: web.*, mcp_servers.hermes-search, platforms.api_server, browser.cdp_url, compression.threshold_tokens, auxiliary.title_generation.*.
+3. Cấu hình gateway & runtime — 4 backend modes; .env.gateway.example keys; HERMES_GATEWAY_* vars list; live probe outputs pasted; which backend is live (healthz field).
+4. Tự động hoá & watchdog — 3 cron jobs + 2 scheduled tasks + refresh wrapper scripts; watchdog logic in 2–4 lines; last-result evidence.
+5. Kho dữ liệu — DB table with REAL counts.
+6. Bản đồ kết nối — who-talks-to-whom (web dev → :8642; MCP client → :8787/mcp; gateway → Hermes bridge sidecar; watchdog → gateway).
+7. Vấn đề & pending (ops-level, evidence-based). No speculation.
+
+ACCEPTANCE
+1. File exists 10–25 KB, Vietnamese, 7 sections.
+2. Every claim traceable to shown command output or file:line.
+3. Live probes pasted with actual outputs.
+4. No secret values (self-check before finish).
+5. Only the allowed 2 files touched.
+
+VERIFY (orchestrator will): re-run healthz + schtasks + one sqlite query; grep doc for secret-like strings; section completeness.
+
+CONSTRAINTS: write-first (if ~15 min in with no file, WRITE NOW with what you have). If an out-of-repo read is rejected by your harness, retry once; if still rejected, record it and continue — do not fight it.
+FINAL OUTPUT (chat ≤15 lines) + agent_logs/auditB_result.json: {"task":"auditB","status":...,"file":"analysis/audit-B-config-ops.md","size_bytes":N,"live_probes":[...],"issues":[...]}

@@ -1,0 +1,38 @@
+=== R-AUDIT CARD A — Backend core flows: cross-verify the Devin codemap + fill backend gaps (Devin / hard) ===
+
+You are the expert-tier agent in an orchestrated analysis round (R-AUDIT) on the Hermes Search Stack.
+Precision + traceable citations matter more than breadth. DOC-ONLY task: you analyze and write ONE markdown file. You do NOT modify code or config.
+
+PROJECT: C:/Users/atton/hermes-search-stack (your cwd; HEAD = f189422, 2026-10-07).
+The repo working tree is your READ-ONLY input. Key inputs:
+- analysis/codemap-devin-2026-10-07.txt — a foreign AI's codemap of this repo: 6 architecture flows with line refs. This is the PRIMARY object under scrutiny.
+- analysis/r16-plan.md, analysis/r16-interfaces.md — current round (R16 Web UI) state/contracts.
+- analysis/r13-verification.md, analysis/r15-interfaces.md, analysis/r9-system-map.md — context.
+- agent_logs/r16_verification_wave1.md, wave2.md, wave3.md — latest ledgers.
+
+DELIVERABLE: WRITE ONLY `analysis/audit-A-core-flows.md` (Vietnamese markdown, 15–35 KB). The only other file you may write: `agent_logs/auditA_result.json` (short). No git. No installs. No network calls. Never delete/rename anything.
+
+CONTENT REQUIREMENTS
+1. §1 Phương pháp & phạm vi — HEAD hash, method, top ~15 files read.
+2. §2 Đối chiếu codemap (the heart): for EACH of the codemap's 6 flows (1 Business Entity Ingestion, 2 Cross-Source Entity Resolution, 3 Local-First Query, 4 Gateway Answer Pipeline, 5 Spatial Coverage Planning, 6 Data Freshness & Versioning):
+   a) verdict table: claim (ngắn) → ĐÚNG / LỆCH / SAI / THIẾU-CHI-TIẾT → bằng chứng `path:line`.
+   b) MANDATORY line-ref audit — verify EACH of these codemap refs against current code and report: still-correct / line-moved-to-X / code-changed / gone:
+      vn_geo/business.py:122, :149, :265, :301, :314, :331 · searchstore/store.py:119, :136, :149, :160 · vn_geo/resolve.py:59, :138, :145, :147, :149 · gateway/core/local_context.py:175 · gateway/core/engine.py:278, :295, :314, :341, :389, :431, :457, :488 · vn_geo/boundaries.py:1 · vn_geo/coverage.py:14, :17, :84 · analysis/r13-user-guide.md:99 · analysis/r14-user-guide.md:98.
+   c) ≥3 substantive claims per flow verified beyond the line refs (idempotency, scoring constants +0.4/+0.2, ambiguity guard, trust ordering, deadline 180s, cache TTL, budget rules, grid math...). Mark operational/historical claims you cannot re-verify as [không thể tái-verify] + reason.
+   d) what the codemap MISSES per flow.
+3. §3 Backend coverage bổ sung (ngoài codemap): MCP tool layer (all 7 tools in gateway/mcp/tools.py — name + 1 line + refs); OpenAI-compat surface (gateway/openai/ — endpoints + notable behavior, incl. last-message-only + tool-calling support state); backends auto/hermes/standalone/stub (1 line each + refs); keyless ring (exa/parallel/keenable); vn_news pipeline (subcommands + formats, refs); trust.py / fact_check.py / depth_policy.py / research_pack.py (1–3 lines each + refs); searchstore CLI + vector tier; plugins/search-prefetch purpose. Every item: `path:line`.
+4. §4 Luồng end-to-end hiện tại (prose, 300–600 words): ingest → store → query → gateway → surfaces (MCP :8787, OpenAI-compat, api_server :8642, web/) with cite anchors.
+5. §5 Vấn đề phát hiện (evidence-based only; "không phát hiện" if none in an area). No speculation.
+
+ACCEPTANCE (checkable)
+1. analysis/audit-A-core-flows.md exists, 15–35 KB, Vietnamese, all 5 sections.
+2. ≥30 `path:line` citations; every cited path EXISTS on disk (check before finishing — the orchestrator re-verifies mechanically; unresolvable citations count as failures).
+3. All 30 codemap line-refs above appear in §2 with explicit status.
+4. No claim without citation; no invented numbers.
+5. Only the allowed 2 files touched.
+
+VERIFY (orchestrator will): size; extract citations → existence-check; spot-check ≥10 citations against actual lines; §2 completeness; uncited-claim scan.
+
+CONSTRAINTS: write-first — if ~20 min in you have not written the file, STOP exploring and WRITE, then refine. Read-only everywhere else.
+FINAL OUTPUT (chat ≤15 lines): what you wrote, size, citation count, unresolved refs, self-checks.
+ALSO WRITE agent_logs/auditA_result.json: {"task":"auditA","status":"done|partial","file":"analysis/audit-A-core-flows.md","size_bytes":N,"sections":[...],"citations_count":N,"unresolved_refs":[...],"issues":[...]}

@@ -1,0 +1,25 @@
+=== R-AUDIT CARD C — Inventory: modules + web/ UI + docs/evidence (OpenCode / light) ===
+
+You are the worker-tier agent in an orchestrated analysis round (R-AUDIT) on the Hermes Search Stack. This is a MECHANICAL inventory task — counts and lists must be exact and traceable. DOC-ONLY: write ONE markdown file. No git; no installs; no network; never modify anything else.
+
+PROJECT: C:/Users/atton/hermes-search-stack (your cwd; HEAD f189422, 2026-10-07).
+
+DELIVERABLE: WRITE ONLY `analysis/audit-C-inventory-web.md` (Vietnamese, 8–20 KB) + `agent_logs/auditC_result.json`.
+
+1. §1 Cây repo & module inventory — per directory (gateway/, vn_geo/, searchstore/, web/, scripts/, plugins/, skills/, tests/, analysis/, evidence/, results/): file count, LOC (py: `find <dir> -name '*.py' -not -path '*/.venv/*' | xargs wc -l` — skip .venv/out-of-scope; web: .ts/.tsx excluding node_modules/ and .next/), 1-line purpose, test mapping where obvious. PRINT the exact commands used for the counts.
+2. §2 web/ (R16 UI) — web/package.json: name + top ~15 deps with versions + scripts; tree of app routes/components (incl. PlacesToolUI/ResearchStatusUI/SourcesDrawer if present + SSE proxy route); summarize from agent_logs/r16_verification_wave2.md + r16_verification_wave3.md what was DEMONSTRATED working (cite ledger).
+3. §3 Docs inventory — SPEC.md, README.md, REPORT.md + ALL analysis/*.md (1-line purpose each, from title/first lines); classify: HIỆN HÀNH (R13+) / LỊCH SỬ (R1–R12) / THAM CHIẾU (interfaces/verification/user-guide). Flag stale candidates (e.g. REPORT.md predates recent rounds) — flag only, never edit.
+4. §4 Evidence inventory — agent_logs: wave ledgers (r13/r14/r15/r16 verification*.md), prompt/result pairs, latest probe artifacts (r16w4_*); evidence/ tree; results/ summary; analysis/r16-fixtures/.
+5. §5 MCP tools / plugins / skills — exact TOOL_NAMES from gateway/mcp/tools.py (all 7); plugins/ dir; skills/ dir listing.
+6. §6 Counts summary — one block: each number + the exact command that produced it.
+
+ACCEPTANCE
+1. File exists 8–20 KB, Vietnamese, 6 sections.
+2. Every count traceable to a printed command; all mentioned paths exist (spot-check 10 before finishing).
+3. Only the allowed 2 files touched.
+4. Keep it fast and mechanical — no deep code reading, do not explore node_modules.
+
+VERIFY (orchestrator will): re-run 3 count commands; spot-check paths; section completeness.
+
+CONSTRAINTS: write-first (start writing by ~15 min regardless of exploration left). 
+FINAL OUTPUT (chat ≤15 lines) + agent_logs/auditC_result.json: {"task":"auditC","status":...,"file":"analysis/audit-C-inventory-web.md","size_bytes":N,"counts":{...},"issues":[...]}
