@@ -1,0 +1,185 @@
+Skip to main content
+SearchStore Semantic Retrieval Infrastructure & R18 Integration Gap
+Sharing
+Only me
+Open in Devin Desktop
+Traces
+Diagram
+SearchStore Semantic Retrieval Infrastructure & R18 Integration Gap
+
+Maps the complete hybrid retrieval infrastructure in SearchStore (FTS5 + vector + RRF fusion) and the intentional blocks in Gateway MCP tools that prevent its use due to missing embedding production. Key entry points: hybrid search execution [1a], MCP tool error gate [2b], single-vector schema constraint [3c], 3-tier vector backend [4a], migration extension pattern [5c].
+
+1
+Hybrid Search Execution Path (FTS5 + Vector → RRF)
+
+SearchStore core module — shows the complete hybrid retrieval flow: FTS5 top-50 + vector top-50 → RRF fusion → ranked results.
+
+1a
+Hybrid mode entry point
+store.py:254
+if mode == "hybrid":
+1b
+Require query_vector validation
+store.py:255
+if query_vector is None:
+raise SearchStoreError if None
+Dual Retrieval (parallel conceptually)
+FTS5 Branch
+1c
+FTS5 retrieval (top 50)
+store.py:258
+fts_hits = self._fts_search(query, limit=50, snippet_len=snippet_len, mode_used="hybrid")
+BM25 ranking via documents_fts
+Vector Branch
+1d
+Vector retrieval (top 50)
+store.py:259
+vec_hits = vectors.similar(self._conn, query_vector, k=50)
+Cosine similarity search
+Fusion & Ranking
+RRF scoring loop
+1e
+RRF fusion scoring
+store.py:262
+rrf[hit["doc_id"]] = rrf.get(hit["doc_id"], 0.0) + 1.0 / (60 + rank)
+Accumulate for both FTS & vector
+1f
+Final ranking output
+store.py:267
+for doc_id, score in sorted(rrf.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]:
+sorted(rrf.items(), key=-score)[:limit]
+2
+MCP Tool Intentional Block on Hybrid Mode
+
+Gateway MCP tools module — hermes_store_query explicitly rejects hybrid/vector modes because the tool cannot supply query embeddings.
+
+make_tools() factory
+2a
+MCP store query tool
+tools.py:350
+def hermes_store_query(query: str, limit: int = 10, mode: str = "auto") -> dict:
+mode normalization
+2b
+Auto mode fallback
+tools.py:357
+if norm == "auto":
+hybrid/vector rejection gate
+2c
+Hybrid/vector mode gate
+tools.py:359
+if norm in ("hybrid", "vector"):
+2d
+Error message to caller
+tools.py:363
+"error": f"mode {mode!r} requires a query vector; use 'fts' or 'auto'"
+"requires a query vector"
+SearchStore execution
+with SearchStore(store_path)
+2e
+FTS-only execution
+tools.py:381
+hits = store.search(query, limit=limit, mode="fts")
+3
+Embedding Storage Single-Vector Constraint
+
+SearchStore vectors module — shows doc_id PRIMARY KEY constraint limits each document to one embedding, blocking multi-model or MRL scenarios.
+
+3a
+Public embedding API
+store.py:384
+def add_embedding(self, doc_id: int, vector: list[float], *, model: str = "unknown") -> None:
+vectors.add_embedding()
+_validate_vector()
+3b
+Embedding insert call
+vectors.py:99
+conn.execute(
+3c
+Replace-by-doc_id behavior
+vectors.py:100
+"INSERT OR REPLACE INTO embeddings(doc_id, model, dim, vector, created_at) VALUES(?, ?, ?, ?, ?)",
+conn.commit()
+Schema Definition (db.py)
+_MIGRATION_1
+3d
+Embeddings table DDL
+db.py:130
+CREATE TABLE IF NOT EXISTS embeddings(
+3e
+Primary key constraint
+db.py:131
+doc_id INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+model TEXT NOT NULL
+dim INTEGER NOT NULL
+vector BLOB NOT NULL
+Same doc_id → overwrites previous
+Different model → replaces old vector
+MRL dimensions → cannot coexist
+4
+Vector Tier Selection and Fallback Chain
+
+SearchStore vectors module — shows 3-tier backend selection (sqlite-vec → numpy → pure Python) ensuring zero-dependency operation.
+
+4a
+Vector search entry point
+vectors.py:152
+def similar(conn: sqlite3.Connection, vector: Any, k: int = 10) -> list[dict]:
+4b
+Tier 1: sqlite-vec check
+vectors.py:157
+if sqlite_vec is not None and _sqlite_vec_ready(conn):
+4c
+sqlite-vec native query
+vectors.py:112
+"SELECT doc_id, vec_distance_cosine(vector, ?) AS dist FROM embeddings ORDER BY dist ASC LIMIT ?",
+4d
+Tier 2: numpy check
+vectors.py:161
+if np is not None:
+4e
+Tier 3: pure Python fallback
+vectors.py:163
+return _similar_python(conn, query, k)
+4f
+Pure Python cosine computation
+vectors.py:146
+score = math.fsum(a * b for a, b in zip(query, vec, strict=True)) / (q_norm * v_norm)
+5
+Schema Migration Extension Pattern
+
+SearchStore db module — shows the append-only migration pattern ready for v2: _MIGRATION_2 appended to _MIGRATIONS list, SCHEMA_VERSION bumped.
+
+5a
+Current schema version
+db.py:19
+SCHEMA_VERSION = 1
+5b
+Migration list
+db.py:146
+_MIGRATIONS = [_MIGRATION_1]
+5c
+Migration loop
+db.py:213
+for idx, sql in enumerate(_MIGRATIONS, start=1):
+5d
+Read applied version
+db.py:212
+applied = conn.execute("PRAGMA user_version").fetchone()[0]
+5e
+Idempotency check
+db.py:214
+if applied >= idx:
+5f
+Version tracking update
+db.py:217
+conn.execute(f"PRAGMA user_version = {idx}")
+5g
+Migration event audit
+db.py:219
+"INSERT INTO events(ts, kind, payload) VALUES(?,?,?)",
+store.py
+vectors.py
+tools.py
+db.py
+searchstore
+store.py
