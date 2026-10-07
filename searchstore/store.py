@@ -527,7 +527,7 @@ def entity_id_for(
         basis = f"{src}|{sid}"
     else:
         basis = f"{src}|{_entity_fold(name or '')}|{_entity_fold(address or '')}"
-    return "e_" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:12]
+    return "e_" + hashlib.sha1(basis.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
 def entity_token_overlap(a: str, b: str) -> float:

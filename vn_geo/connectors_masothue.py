@@ -111,7 +111,7 @@ def _iso_now() -> str:
 
 
 def _entity_id(source: str, source_id: str) -> str:
-    digest = hashlib.sha1(f"{source}|{source_id}".encode()).hexdigest()
+    digest = hashlib.sha1(f"{source}|{source_id}".encode(), usedforsecurity=False).hexdigest()
     return f"e_{digest[:12]}"
 
 
