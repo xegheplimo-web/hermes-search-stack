@@ -39,9 +39,9 @@ class FakeC(FakeProvider):
     name = "c"
 
 
-def test_providers_empty_in_w1a():
-    """W1A ships the foundation only; W2 registers the real providers."""
-    assert providers_mod.PROVIDERS == {}
+def test_providers_registered():
+    """W2 registers the seven keyless providers into the registry."""
+    assert set(providers_mod.PROVIDERS) == {"bilibili", "exa", "jina", "parallel", "rss", "v2ex", "youtube"}
 
 
 def test_fake_provider_satisfies_protocol():

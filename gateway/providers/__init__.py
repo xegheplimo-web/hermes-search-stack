@@ -98,3 +98,28 @@ def build_registry(config: GatewayConfig, *, warnings: list[str] | None = None) 
 
 
 __all__ = ["PROVIDERS", "Provider", "ProviderError", "build_registry", "get_provider"]
+
+# --- W2 registration (additive) ---------------------------------------------
+# Imported at the END of the module so ``ProviderError`` (and the protocol) are
+# already defined; submodules import ``ProviderError`` lazily inside methods, so
+# this block introduces no import cycle. Factories take no args (constructors
+# default ``fetch=None`` -> ``default_fetch``); PROVIDERS values are the classes.
+from gateway.providers.bilibili import BilibiliProvider  # noqa: E402
+from gateway.providers.exa import ExaProvider  # noqa: E402
+from gateway.providers.jina import JinaProvider  # noqa: E402
+from gateway.providers.parallel import ParallelProvider  # noqa: E402
+from gateway.providers.rss import RSSProvider  # noqa: E402
+from gateway.providers.v2ex import V2EXProvider  # noqa: E402
+from gateway.providers.youtube import YouTubeProvider  # noqa: E402
+
+PROVIDERS.update(
+    {
+        "exa": ExaProvider,
+        "parallel": ParallelProvider,
+        "jina": JinaProvider,
+        "v2ex": V2EXProvider,
+        "bilibili": BilibiliProvider,
+        "youtube": YouTubeProvider,
+        "rss": RSSProvider,
+    }
+)
