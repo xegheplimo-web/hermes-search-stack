@@ -1,0 +1,73 @@
+{
+ "took": 89,
+ "total": 61,
+ "hits": [
+  {
+   "_score": 112.21738,
+   "_index": "topic_v1",
+   "_type": "topic",
+   "_id": "6235",
+   "sort": null,
+   "highlight": {
+    "title": [
+     "<em>Vietnam</em> Fan Kit"
+    ]
+   },
+   "_source": {
+    "node": 7,
+    "replies": 0,
+    "created": "2010-12-23T15:12:58",
+    "member": "Livid",
+    "id": 6235,
+    "title": "Vietnam Fan Kit",
+    "content": "http://www.battlefieldbadcompany2.com/sites/default/files/BFBC2VietnamFanKit_Trailers.zip"
+   }
+  },
+  {
+   "_score": 102.28132,
+   "_index": "topic_v1",
+   "_type": "topic",
+   "_id": "6463",
+   "sort": null,
+   "highlight": {
+    "content": [
+     "话说你没有在哪见到 <em>Vietnam</em> 的武器的高清 PNG 图？\r\n\r\n不明白为什么这次 EA 官方的 graphic kit 居然是 JPG。。。"
+    ],
+    "reply_list.content": [
+     "嗯，武器的大图。\r\n\r\n之前官方的 graphic kit 里都有 1024 宽度的 PNG，但是居然这次 <em>Vietnam</em> 是 JPG -_-\r\n\r\n我确实很想去解……"
+    ]
+   },
+   "_source": {
+    "node": 7,
+    "replies": 22,
+    "created": "2010-12-29T02:37:22",
+    "member": "Livid",
+    "id": 6463,
+    "title": "@GordianZ",
+    "content": "话说你没有在哪见到 Vietnam 的武器的高清 PNG 图？\r\n\r\n不明白为什么这次 EA 官方的 graphic kit 居然是 JPG。。。"
+   }
+  },
+  {
+   "_score": 94.18427,
+   "_index": "topic_v1",
+   "_type": "topic",
+   "_id": "1188435",
+   "sort": null,
+   "highlight": {
+    "content": [
+     "规格：\r\n\r\n![1-<em>Vietnam</em>-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\n摘要"
+    ]
+   },
+   "_source": {
+    "node": 653,
+    "replies": 0,
+    "created": "2026-01-26T07:29:31",
+    "member": "tpxcer",
+    "id": 1188435,
+    "title": "DigVPS 测评 - Lisahost（丽萨主机）上新越南双 ISP 原生住宅家宽 IP VPS 产品，奉上详评数据， IP 很不错，新品 9 折优惠中。",
+    "content": "规格：\r\n\r\n![1-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\n摘要：\r\n\r\n![2-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\n硬件：\r\n\r\n![3-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\n速率：\r\n\r\n![4-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\nIPv4 质量：\r\n\r\n![5-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\nICMP 延迟：\r\n\r\n![6-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\nTCP 延迟：\r\n\r\n![7-Vietnam-Dual-ISP-Residential-Native-IP-VPS.png](  )\r\n\r\n> 如果各位小伙伴对该产品感兴趣，想要持续关注其**实时与历史数据表现**，欢迎访问我们的[站点]( https://digvps.com/review/lisahost#Vietnam-Dual-ISP-Residential-Native-IP-VPS)进行长期跟踪。"
+   }
+  }
+ ],
+ "timed_out": false
+}
