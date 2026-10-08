@@ -41,4 +41,17 @@ Instrumented từ Round 0. Graph: `.code-review-graph/graph.db` @ `cee297d` (ref
 - CI Bandit B314 (ET.fromstring) → orchestrator fix: defusedxml lazy import + pin `defusedxml==0.7.1` (requirements-gateway.txt) → CI green.
 - Review loop: Codex ×2 → **2 TP** (ProviderError contract wrap at provider boundary; bilibili `description` precedence) → fix1 dispatched (Cline, in flight).
 
-## W3 (append khi xong)
+## W3A — caller context + MCP surface (Devin · build → fix3)
+- Deliverables: `gateway/protocols.py` (EvidenceItem.origin) · `gateway/core/engine.py` (run/run_iter context param; `_append_context_evidence`; SourceRef.origin) · `gateway/mcp/tools.py` (hermes_research context + origin echo; NEW `hermes_social` 8th tool; FROZEN_TOOL_PARAMS additive) · `tests/gateway/test_w3_context.py` (NEW).
+- Verify: 68→72 scoped · full **1339→1343 passed, 1 skipped** · ruff clean (252) → merged **PR #9** (`f1a5fdf`) after fix3.
+- Review loop PR #9: Devin ×2 + Codex ×2 → **3 TP** (context lost on spent deadline [dup]; caller URL overwrote fetched trust scores; **P1** context-scoped requests bypass the query cache — read AND publish) → fix3 same agent (+4 tests) → 7/7 threads resolved.
+
+## W3B — eval corpus + docs (Cline · build → fix1)
+- Deliverables: `evals/r9/corpus_v1.jsonl` (+12 multi-source cases vn-069..080, append-only) · `evals/r9/README.md` (80) · `AGENTS.md` (Gateway providers section).
+- Verify: 80 valid JSON, old 68 byte-untouched, holdout intact (**vn-075 joins modulo-5 → 72 probes**), dry-run 72/72 · full **1321 passed** · ruff clean (251).
+- CI caught: corpus-size oracle still 68 → orchestrator integration fix (`656ab8d`). Review loop PR #10: Devin ×3 + Codex ×1 → **3 TP** (variants dropped clauses; vn-071 address≠tax-code; vn-072 manufacturer range) + 1 dup-fixed + 1 by-design → fix1 same agent (`9cebda0`) → 7/7 threads resolved → merged **PR #10** (`3bf8c5d`).
+- Live smoke: **4/4 providers live** (v2ex/bilibili/rss/youtube) · engine deep smoke: provider hits in evidence (reserve slots) ✓.
+
+## Final verify (2026-10-08) — R17 DONE
+- main @ `3bf8c5d`: full suite **1343 passed, 1 skipped** · ruff clean (252 files) · bandit CI-scope Medium 0/High 0 · CI remote all green across 10 PRs.
+- Live: 4/4 provider smoke + engine deep fan-out smoke (2 provider hits survive cap).
