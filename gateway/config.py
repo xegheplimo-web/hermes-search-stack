@@ -27,6 +27,10 @@ DEFAULT_SYNTH_TIMEOUT = 120.0
 DEFAULT_ADMISSION_MAX_INFLIGHT = 4
 DEFAULT_ADMISSION_QUEUE_CAP = 16
 DEFAULT_REQUEST_DEADLINE_S = 180.0
+DEFAULT_PROVIDERS_ENABLED = False
+DEFAULT_PROVIDERS_MAX = 4
+DEFAULT_PROVIDER_TIMEOUT_S = 8.0
+DEFAULT_PROVIDERS = "exa,parallel,jina,v2ex,bilibili,youtube,rss"
 
 # Repo root = the directory containing the ``gateway`` package.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -157,6 +161,10 @@ class GatewayConfig:
     ultra_enabled: bool = True  # deep path only; inert unless >=2 workstreams
     ultra_max_workstreams: int = 4
     pool_size: int = 4  # internal worker-pool concurrency; admission/healthz untouched
+    providers_enabled: bool = False  # R17 master switch; False = current behavior
+    providers_max: int = 4  # max providers per sub-query fan-out
+    provider_timeout_s: float = 8.0  # per provider call
+    providers: str = DEFAULT_PROVIDERS  # enabled set (comma-separated names)
     hermes_python: str | None = None
     hermes_home: str | None = None
     repo_root: str = ""
@@ -193,6 +201,10 @@ class GatewayConfig:
             ultra_enabled=_env_bool(f"{ENV_PREFIX}ULTRA_ENABLED", True),
             ultra_max_workstreams=_env_int(f"{ENV_PREFIX}ULTRA_MAX_WORKSTREAMS", 4),
             pool_size=_env_int(f"{ENV_PREFIX}POOL_SIZE", 4),
+            providers_enabled=_env_bool(f"{ENV_PREFIX}PROVIDERS_ENABLED", False),
+            providers_max=_env_int(f"{ENV_PREFIX}PROVIDERS_MAX", 4),
+            provider_timeout_s=_env_float(f"{ENV_PREFIX}PROVIDER_TIMEOUT_S", 8.0),
+            providers=_env_str(f"{ENV_PREFIX}PROVIDERS", DEFAULT_PROVIDERS),
             hermes_python=_env_opt(f"{ENV_PREFIX}HERMES_PYTHON"),
             hermes_home=_env_opt(f"{ENV_PREFIX}HERMES_HOME"),
             repo_root=_env_str(f"{ENV_PREFIX}REPO_ROOT", str(_REPO_ROOT)),
@@ -214,6 +226,17 @@ class GatewayConfig:
         """Resolve *value* against ``repo_root`` when it is a relative path."""
         path = Path(value).expanduser()
         return path if path.is_absolute() else self.root / path
+
+    def enabled_providers(self) -> tuple[str, ...]:
+        """Parse ``self.providers``: split on ",", strip, drop empties, dedupe keep-first."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for part in self.providers.split(","):
+            name = part.strip()
+            if name and name not in seen:
+                seen.add(name)
+                out.append(name)
+        return tuple(out)
 
     @property
     def cache_db_path(self) -> Path:
