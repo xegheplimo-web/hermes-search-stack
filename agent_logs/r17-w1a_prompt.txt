@@ -1,0 +1,90 @@
+TASK: R17-W1A — gateway/providers/ foundation (registry + protocol + config keys + hermetic tests)
+
+PROJECT: hermes-search-stack (you are inside a worktree; branch task/r17-w1a-providers-foundation off main@3e45a17).
+
+SCOPE — write ONLY these files:
+  1. gateway/providers/__init__.py        (NEW package — the only new source file)
+  2. gateway/config.py                    (ADDITIVE edit: 4 new keys + 1 helper method)
+  3. tests/gateway/test_providers.py      (NEW test file)
+Read-only everywhere else. Never touch: gateway/core/, gateway/backends/, gateway/protocols.py,
+tests/test_providers.py (that file is the vn_geo suite — a different thing), analysis/, web/.
+
+READ FIRST (frozen contract — implement EXACTLY as specified below; do NOT re-litigate design):
+  - analysis/r17-interfaces.md §1 (Provider protocol + registry contract, frozen v1.0)
+  - vn_geo/providers.py — the house pattern to mirror (Protocol + PROVIDERS + get_provider + typed error)
+  - gateway/protocols.py — REUSE SearchItem/ExtractItem; NO new wire types
+  - gateway/config.py — existing pattern (_env_* helpers, DEFAULT_* constants, from_env())
+
+DELIVERABLE 1 — gateway/providers/__init__.py:
+  - Module docstring referencing analysis/r17-interfaces.md §1 (frozen v1.0).
+  - class Provider(Protocol) with @runtime_checkable:
+      name: str
+      capabilities: frozenset[str]          # subset of {"search", "extract"}
+      def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]: ...
+      def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]: ...
+    (import SearchItem/ExtractItem from gateway.protocols — REUSE, do not redefine)
+  - class ProviderError(Exception): __init__(self, name: str, detail: str) stores self.name/self.detail;
+    __str__ returns f"provider {name!r}: {detail}".
+  - PROVIDERS: dict[str, Callable[[], Provider]] = {}   # name -> factory; intentionally EMPTY in W1A
+    (W2 registers exa/parallel/jina/v2ex/bilibili/youtube/rss later)
+  - def get_provider(name: str) -> Provider:
+      normalize name (str(name or "").strip()); if in PROVIDERS -> return PROVIDERS[name]();
+      else raise ProviderError(name, "unknown provider")   # str(exc) must contain "unknown provider"
+  - def build_registry(config: GatewayConfig) -> list[Provider]:
+      if not config.providers_enabled: return []
+      for n in config.enabled_providers(): if n in PROVIDERS: append PROVIDERS[n](); stop at config.providers_max
+      unknown names are skipped silently (per-source isolation philosophy); order = config order (stable).
+  - __all__ = ["PROVIDERS", "Provider", "ProviderError", "build_registry", "get_provider"]
+  - Import GatewayConfig as: from gateway.config import GatewayConfig (config does not import providers — no cycle).
+
+DELIVERABLE 2 — gateway/config.py (additive only):
+  - New module constants: DEFAULT_PROVIDERS_ENABLED = False; DEFAULT_PROVIDERS_MAX = 4;
+    DEFAULT_PROVIDER_TIMEOUT_S = 8.0; DEFAULT_PROVIDERS = "exa,parallel,jina,v2ex,bilibili,youtube,rss"
+  - New GatewayConfig fields (append after pool_size):
+      providers_enabled: bool = False
+      providers_max: int = 4
+      provider_timeout_s: float = 8.0
+      providers: str = DEFAULT_PROVIDERS
+  - from_env() additions:
+      providers_enabled=_env_bool(f"{ENV_PREFIX}PROVIDERS_ENABLED", False),
+      providers_max=_env_int(f"{ENV_PREFIX}PROVIDERS_MAX", 4),
+      provider_timeout_s=_env_float(f"{ENV_PREFIX}PROVIDER_TIMEOUT_S", 8.0),
+      providers=_env_str(f"{ENV_PREFIX}PROVIDERS", DEFAULT_PROVIDERS),
+  - New method enabled_providers(self) -> tuple[str, ...]: split self.providers on ",", strip each,
+    drop empties, dedupe keep-first-order.
+  - Do NOT rename/move/change anything existing.
+
+DELIVERABLE 3 — tests/gateway/test_providers.py (hermetic; no network; no live calls):
+  - FakeProvider defined in-test: name="fake", capabilities=frozenset({"search"}),
+    search returns [SearchItem(title="t", url="https://example.test/1")], extract returns [].
+  - Tests (at minimum):
+    1. FakeProvider satisfies Provider protocol (runtime_checkable isinstance).
+    2. get_provider("nope") raises ProviderError; "unknown provider" in str(exc); exc.name == "nope".
+    3. get_provider("fake") after monkeypatch.setitem(gateway.providers.PROVIDERS, "fake", FakeProvider)
+       returns a FakeProvider instance.
+    4. build_registry with providers_enabled=False returns [].
+    5. build_registry enabled: monkeypatch PROVIDERS with fakes a/b/c/fake; config providers="b,fake,unknown,a",
+       max=4 -> [b, fake, a] (unknown skipped, config order kept).
+    6. build_registry respects providers_max cap (max=2 -> first 2 known).
+    7. GatewayConfig() defaults: providers_enabled is False, providers_max == 4, provider_timeout_s == 8.0,
+       providers == DEFAULT_PROVIDERS.
+    8. from_env via monkeypatch.setenv: HERMES_GATEWAY_PROVIDERS_ENABLED=true, HERMES_GATEWAY_PROVIDERS_MAX=2,
+       HERMES_GATEWAY_PROVIDER_TIMEOUT_S=3.5, HERMES_GATEWAY_PROVIDERS="a, b ,a,c"
+       -> enabled_providers() == ("a","b","c"); providers_max == 2; providers_enabled is True.
+    9. enabled_providers() on empty string -> ().
+  - Follow existing style in tests/gateway/ (plain pytest functions).
+
+ACCEPTANCE (orchestrator runs exactly these; all must pass):
+  A1. .venv/Scripts/python.exe -c "from gateway.providers import PROVIDERS, Provider, ProviderError, build_registry, get_provider"   (exit 0)
+  A2. .venv/Scripts/python.exe -m pytest tests/gateway/test_providers.py -q   (exit 0)
+  A3. .venv/Scripts/python.exe -m pytest -q   (exit 0 — FULL default-off regression, existing suites untouched, ~1279 tests)
+  A4. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+  A5. No network imports/usage in the new files (no socket/urllib/httpx/requests).
+
+CONSTRAINTS:
+  - Stay inside this worktree; read-only outside it. No commits, no pushes, no new dependencies, no other file edits.
+  - Local venv: .venv/Scripts/python.exe (Python 3.14). Run commands from the worktree root.
+  - Write gateway/providers/__init__.py within your first ~8 minutes — the contract is frozen; implement exactly, do not over-plan.
+  - If anything in this card conflicts with analysis/r17-interfaces.md, STOP and report — do not silently deviate.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + any deviations.
