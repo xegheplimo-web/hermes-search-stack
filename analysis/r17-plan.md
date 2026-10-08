@@ -1,6 +1,6 @@
 # R17 — Multi-source providers (keyless) — round control
 
-**Status: IN PROGRESS — W1A dispatched 2026-10-08 (graph @ cee297d).** Scope source: `analysis/r17-providers-plan.md`.
+**Status: IN PROGRESS — W1A DONE (merged PR #5 @ `15e54d1`) · reviewfix `task/r17-w1a-reviewfix` in flight · W1B∥W2 next (graph @ cee297d).** Scope source: `analysis/r17-providers-plan.md`.
 Orchestrator: Hermes (lead-orchestrator 1.4.4 + hermes-codemap v1.0.0 + CRG v2.3.9). Owner: Sếp.
 
 ## Process (chốt 2026-10-08 — codemap-integrated)

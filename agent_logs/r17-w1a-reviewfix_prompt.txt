@@ -1,0 +1,63 @@
+TASK: R17-W1A-REVIEWFIX — build_registry hardening (2 verified true positives from PR #5 review)
+
+PROJECT: hermes-search-stack (worktree; branch task/r17-w1a-reviewfix off main @ 15e54d19).
+
+CONTEXT: PR #5 (W1A providers foundation) merged; automated review (Devin Review + Codex) left comments.
+The orchestrator verified each claim against the code — two are REAL defects to fix now:
+
+DEFECT 1 — Zero provider cap selects one provider (Devin #1 + Codex P2, same issue):
+  With `providers_max=0`, `build_registry` still instantiates the first registered provider because the cap
+  is checked only AFTER appending. Fix: check the cap BEFORE instantiating:
+      for n in config.enabled_providers():
+          if len(registry) >= config.providers_max:
+              break
+          if n in PROVIDERS:
+              registry.append(...)
+  Expected: providers_max=0 -> EMPTY registry (zero-call budget honored).
+
+DEFECT 2 — Failed factory blocks healthy providers (Devin #3):
+  `registry.append(PROVIDERS[n]())` — if one factory raises, build_registry aborts and healthy providers
+  after it never join. Fix: isolate EACH factory invocation in try/except; on exception skip that provider
+  and continue. Add a new OPTIONAL keyword parameter so the caller can surface the failure:
+      def build_registry(config: GatewayConfig, *, warnings: list[str] | None = None) -> list[Provider]:
+          ...
+          try:
+              registry.append(PROVIDERS[n]())
+          except Exception as exc:  # noqa: BLE001 — isolation: one bad factory must not block others
+              if warnings is not None:
+                  warnings.append(f"provider {n} factory failed: {exc}")
+              continue
+  Backward-compatible: existing call `build_registry(config)` keeps working (warnings=None -> silent skip).
+
+NOT a defect (do NOT change): empty `HERMES_GATEWAY_PROVIDERS` falling back to DEFAULT_PROVIDERS is the
+house `_env_str` convention (empty -> default) — consistent with every other key; disable via PROVIDERS_ENABLED=false.
+
+SCOPE — write/modify ONLY:
+  1. gateway/providers/__init__.py  (build_registry function ONLY — nothing else in the file)
+  2. tests/gateway/test_providers.py (ADD two new tests; do not modify existing tests)
+Read-only everywhere else.
+
+READ FIRST:
+  - gateway/providers/__init__.py (current build_registry)
+  - tests/gateway/test_providers.py (existing test style — reuse its config/factory helpers)
+
+NEW TESTS (add to tests/gateway/test_providers.py):
+  T1. `test_build_registry_zero_max_returns_empty`: enabled config with providers_max=0 and a registered
+      provider -> build_registry(config) == [].
+  T2. `test_build_registry_factory_failure_isolated`: register two providers where the FIRST factory raises
+      (monkeypatch PROVIDERS["bad"] with a factory that raises RuntimeError("boom")) and the second is
+      healthy; build_registry(config, warnings=warnings) -> returns ONLY the healthy provider, and
+      warnings == ["provider bad factory failed: boom"].
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_providers.py -o addopts= -q      (exit 0; all tests incl. 2 new)
+  A2. .venv/Scripts/python.exe -m pytest -o addopts= -q                                     (exit 0 — full suite)
+  A3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies.
+  - .venv in this worktree is a junction to the main checkout venv — run `.venv/Scripts/python.exe ...` from the worktree root.
+  - Change ONLY the two files listed; do not touch any other test or module.
+  - This is a tiny, fully-specified fix: implement it within your first ~5 minutes, do not over-plan.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts).

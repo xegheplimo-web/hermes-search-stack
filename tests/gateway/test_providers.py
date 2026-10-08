@@ -91,6 +91,25 @@ def test_build_registry_respects_max(monkeypatch):
     assert [p.name for p in registry] == ["a", "b"]
 
 
+def test_build_registry_zero_max_returns_empty(monkeypatch):
+    monkeypatch.setitem(PROVIDERS, "a", FakeA)
+    cfg = GatewayConfig(providers_enabled=True, providers="a", providers_max=0)
+    assert build_registry(cfg) == []
+
+
+def test_build_registry_factory_failure_isolated(monkeypatch):
+    def bad_factory():
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(PROVIDERS, "bad", bad_factory)
+    monkeypatch.setitem(PROVIDERS, "b", FakeB)
+    cfg = GatewayConfig(providers_enabled=True, providers="bad,b", providers_max=4)
+    warnings: list[str] = []
+    registry = build_registry(cfg, warnings=warnings)
+    assert [p.name for p in registry] == ["b"]
+    assert warnings == ["provider bad factory failed: boom"]
+
+
 def test_config_defaults():
     cfg = GatewayConfig()
     assert cfg.providers_enabled is False
