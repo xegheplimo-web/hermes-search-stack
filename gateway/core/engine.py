@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from gateway.protocols import SearchBackend
 
 _DEPTHS = ("auto", "fast", "deep")
+_PROVIDER_EVIDENCE_RESERVE = 2  # provider URLs kept inside the deep_extract cap (R17-W1B)
 
 
 def _ms() -> float:
@@ -381,7 +382,12 @@ class Engine:
             # + the SAME sub_queries, deduped — hits merge into the shared
             # evidence pipeline below. Off by default; isolated, never raises.
             if getattr(self.config, "providers_enabled", False) and not deadline_passed():
-                search_items.extend(self._provider_fanout(query, sub_queries, deadline_passed, warnings))
+                prov_items = self._provider_fanout(query, sub_queries, deadline_passed, warnings)
+                if prov_items:
+                    cap = int(getattr(self.config, "deep_extract", 8) or 8)
+                    reserve = min(len(prov_items), _PROVIDER_EVIDENCE_RESERVE)
+                    cut = max(0, cap - reserve)
+                    search_items = search_items[:cut] + prov_items + search_items[cut:]
         if deadline_passed():
             cap = self.config.deep_extract if mode == "deep" else self.config.fast_extract
             evidence = _search_items_to_evidence(search_items[: max(0, cap)])
@@ -734,7 +740,7 @@ class Engine:
             if not registry or not targets:
                 return []
             pool = BackendPool(
-                factory=lambda: ProviderFanoutBackend(registry, warnings=warnings),
+                factory=lambda: ProviderFanoutBackend(build_registry(self.config), warnings=warnings),
                 size=int(getattr(self.config, "pool_size", 4) or 4),
                 deadline_passed=deadline_passed,
             )

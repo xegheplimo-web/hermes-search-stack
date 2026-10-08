@@ -9,6 +9,7 @@ so provider URLs stay under the ``deep_extract`` cap and reach evidence.
 
 from __future__ import annotations
 
+import gateway.core.engine as engine_mod
 import gateway.providers as providers_mod
 from gateway.backends.stub import StubBackend
 from gateway.config import GatewayConfig
@@ -221,3 +222,47 @@ def test_duplicate_urls_deduped_across_sources(tmp_path, monkeypatch):
     assert len(normalized) == len(set(normalized))
     assert "https://stub.example/article-1" in normalized
     assert "https://fake1.example/unique" in normalized
+
+
+# ---------- review fixes (R17-W1B-FIX1): evidence budget + worker race ----------
+
+
+def test_provider_evidence_survives_full_probe_cap(tmp_path, monkeypatch):
+    """A full probe (>= ``deep_extract`` hits) must not evict ALL provider URLs."""
+    items = [SearchItem(title=f"Big {i}", url=f"https://big.example/{i}", description=f"big {i}") for i in range(1, 11)]
+    fake1 = FakeProvider("fake1", _provider_items("fake1"), calls=[])
+    _register(monkeypatch, fake1=fake1)
+    engine = _fanout_engine(tmp_path, backend=StubBackend(items=items), providers="fake1", xhigh_enabled=False)
+    result = engine.run(COMPARATIVE, depth="deep", allow_cache=False)
+    urls = [s.url for s in result.sources]
+    assert any(u.startswith("https://fake1.example/") for u in urls)
+    assert len(urls) <= engine.config.deep_extract
+
+    engine_off = _fanout_engine(
+        tmp_path, backend=StubBackend(items=items), providers_enabled=False, xhigh_enabled=False
+    )
+    result_off = engine_off.run(COMPARATIVE, depth="deep", allow_cache=False)
+    assert [s.url for s in result_off.sources] == [
+        f"https://big.example/{i}" for i in range(1, engine_off.config.deep_extract + 1)
+    ]
+
+
+def test_provider_fanout_builds_fresh_registry_per_worker(tmp_path, monkeypatch):
+    """Each pool worker builds its OWN registry — shared provider instances race."""
+    calls: list = []
+    real_build = providers_mod.build_registry
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real_build(*args, **kwargs)
+
+    monkeypatch.setattr(engine_mod, "build_registry", counting)
+    fake1 = FakeProvider("fake1", _provider_items("fake1"), calls=[])
+    fake2 = FakeProvider("fake2", _provider_items("fake2"), calls=[])
+    _register(monkeypatch, fake1=fake1, fake2=fake2)
+    engine = _fanout_engine(tmp_path)
+    engine.run(MULTIPART, depth="deep", allow_cache=False)
+    assert len(calls) >= 2  # 1 outer empty-check build + >=1 per-worker build
+    expected = {MULTIPART, SUB_A, SUB_B}
+    assert set(fake1.calls) == expected
+    assert set(fake2.calls) == expected
