@@ -1,0 +1,147 @@
+TASK: R17-W2 — keyless provider implementations (7 providers, hermetic tests, live-captured fixtures)
+
+PROJECT: hermes-search-stack (worktree; branch task/r17-w2-provider-impls off main which already includes W1A).
+
+SCOPE — write/modify ONLY:
+  1. gateway/providers/_http.py       (NEW — shared fetch type + default httpx fetch + MCP helpers)
+  2. gateway/providers/exa.py         (NEW)
+  3. gateway/providers/parallel.py    (NEW)
+  4. gateway/providers/jina.py        (NEW)
+  5. gateway/providers/v2ex.py        (NEW)
+  6. gateway/providers/bilibili.py    (NEW)
+  7. gateway/providers/youtube.py     (NEW)
+  8. gateway/providers/rss.py         (NEW)
+  9. gateway/providers/__init__.py    (ADDITIVE ONLY: register the 7 in PROVIDERS at the END of the file)
+ 10. tests/gateway/test_provider_impls.py (NEW)
+ 11. tests/gateway/test_providers.py (ONE test update only — see the note in section I)
+Read-only everywhere else. Never touch: gateway/core/*, gateway/backends/* (standalone.py stays UNTOUCHED this round — code unification is deferred; a duplicate helper is acceptable), gateway/config.py.
+
+READ FIRST:
+  - analysis/r17-interfaces.md §1 (Provider protocol — frozen) + §6 (tests contract)
+  - gateway/providers/__init__.py — W1A: Provider, PROVIDERS, ProviderError, get_provider, build_registry
+  - vn_geo/providers.py — house pattern (Protocol + typed error + __all__)
+  - gateway/backends/standalone.py — existing exa/parallel MCP call+parse logic; COPY the helpers you need
+    (parse_mcp_body, mcp_call, exa text-block parsing) into _http.py — do not import from standalone.
+  - tests/fixtures/r17/ — LIVE-CAPTURED fixtures (real wire shapes; use them as test inputs):
+      sov2ex_search.json, bilibili_search.json, google_news_rss.xml, jina_example.md,
+      exa_search.txt, exa_fetch.txt, parallel_search.txt, parallel_fetch.txt, youtube_results.html
+
+DESIGN (chốt — implement exactly; do not re-litigate):
+
+A) gateway/providers/_http.py:
+   - FetchFn = Callable[..., str]  # fetch(url, *, method="GET", headers=None, params=None, json=None, timeout=None) -> response TEXT
+   - def default_fetch(url, *, method="GET", headers=None, params=None, json=None, timeout=30.0) -> str:
+       lazy httpx import (raise ProviderError-like RuntimeError with a clear message when missing);
+       returns response text (utf-8, errors="replace"); non-2xx -> RuntimeError(f"HTTP {status} from {url}: {body[:200]}").
+   - def parse_mcp_body(body: str) -> str — copied from standalone (JSON or SSE "data:" lines; error envelopes raise).
+   - def mcp_call(fetch: FetchFn, url: str, tool: str, arguments: dict) -> str — POST JSON-RPC tools/call
+     with headers {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+     then parse_mcp_body on the response text.
+   - def parse_exa_search_text(text: str, limit: int) -> list[SearchItem] — copied from standalone (--- separated
+     Title:/URL:/Highlights: blocks).
+
+B) exa.py — class ExaProvider: name="exa", capabilities=frozenset({"search", "extract"})
+   __init__(self, fetch: FetchFn | None = None) -> self._fetch = fetch or default_fetch
+   EXA_MCP_URL = "https://mcp.exa.ai/mcp"
+   search(query, max_results=10): mcp_call(self._fetch, EXA_MCP_URL, "web_search_exa",
+     {"query": query, "numResults": max(1, int(max_results))}) -> parse_exa_search_text(text, max_results).
+   extract(urls, char_limit=15000): per URL mcp_call(..., "web_fetch_exa", {"urls": [url]}) ->
+     ExtractItem(url=url, title=<first "# "/"Title:" line>, content=text[:char_limit]).
+
+C) parallel.py — class ParallelProvider: name="parallel", capabilities={"search", "extract"}
+   PARALLEL_MCP_URL = "https://search.parallel.ai/mcp"
+   search(query, max_results=10): mcp_call(..., "web_search", {"objective": query, "search_queries": [query],
+     "session_id": uuid.uuid4().hex}) -> json.loads(text) -> results[] ->
+     SearchItem(title=r["title"], url=r["url"], description=" ".join(r.get("excerpts") or []), position=i+1).
+   extract(urls, char_limit=15000): per URL mcp_call(..., "web_fetch", {"urls": [url], "objective": "Full page content",
+     "session_id": ...}) -> json: results[] -> full_content/content/excerpts join; errors[] -> ExtractItem(url, error=...).
+
+D) jina.py — class JinaProvider: name="jina", capabilities=frozenset({"extract"})  (extract-ONLY)
+   JINA_READER = "https://r.jina.ai/"
+   extract(urls, char_limit=15000): per URL: self._fetch(JINA_READER + url, headers={"Accept": "text/plain"})
+     -> parse: title from the "Title:" line; content = text AFTER the "Markdown Content:" marker (whole text if absent).
+   search(...): raise ProviderError("jina", "search not supported (extract-only provider)")
+     (lazy import: `from gateway.providers import ProviderError` INSIDE the method — avoids circular import).
+   CRITICAL (verified live): do NOT send a browser User-Agent — Cloudflare challenges it; `Accept: text/plain` is REQUIRED.
+
+E) v2ex.py — class V2EXProvider: name="v2ex", capabilities={"search"}
+   search(query, max_results=10): self._fetch("https://www.sov2ex.com/api/search",
+     params={"q": query, "size": max(1, int(max_results))}) -> json: hits[]._source ->
+     SearchItem(title=src["title"], url=f"https://www.v2ex.com/t/{src['id']}",
+     description=(src.get("content") or "")[:200], position=i+1).
+
+F) bilibili.py — class BilibiliProvider: name="bilibili", capabilities={"search"}
+   BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+   search(query, max_results=10): self._fetch("https://api.bilibili.com/x/web-interface/search/all/v2",
+     params={"keyword": query, "page": 1}, headers={"User-Agent": BROWSER_UA}) -> json: data.result[] ->
+     the group with result_type=="video" -> data[] items: title = strip "<em>"/"</em>" tags + html.unescape,
+     url = "https://www.bilibili.com/video/" + (bvid or from arcurl), description = desc or author, position=i+1.
+
+G) youtube.py — class YouTubeProvider: name="youtube", capabilities={"search"}  (pure HTTP, NO yt-dlp)
+   search(query, max_results=10): self._fetch("https://www.youtube.com/results",
+     params={"search_query": query}, headers={"User-Agent": BROWSER_UA}) -> regex
+     `var ytInitialData = (\{.*?\});</script>` (DOTALL) -> json.loads -> walk the tree for dicts with key
+     "videoRenderer" -> SearchItem(title=r["title"]["runs"][0]["text"], url=f"https://www.youtube.com/watch?v={r['videoId']}",
+     description = first of shortBylineText runs / lengthText / "" , position=i+1). Cap at max_results.
+
+H) rss.py — class RSSProvider: name="rss", capabilities={"search"}  (in-repo parser, NO feedparser)
+   search(query, max_results=10): self._fetch("https://news.google.com/rss/search",
+     params={"q": query, "hl": "vi", "gl": "VN", "ceid": "VN:vi"}) -> xml.etree.ElementTree.fromstring ->
+     channel/item -> SearchItem(title=<title>, url=<link>, description = source text + pubDate best-effort, position=i+1).
+
+I) gateway/providers/__init__.py — ADDITIVE registration at the END of the file (after all existing symbols):
+     from gateway.providers.exa import ExaProvider
+     from gateway.providers.parallel import ParallelProvider
+     from gateway.providers.jina import JinaProvider
+     from gateway.providers.v2ex import V2EXProvider
+     from gateway.providers.bilibili import BilibiliProvider
+     from gateway.providers.youtube import YouTubeProvider
+     from gateway.providers.rss import RSSProvider
+     PROVIDERS.update({
+       "exa": ExaProvider, "parallel": ParallelProvider, "jina": JinaProvider,
+       "v2ex": V2EXProvider, "bilibili": BilibiliProvider, "youtube": YouTubeProvider, "rss": RSSProvider,
+     })
+   (factories take no args -> constructors must work with fetch=None; PROVIDERS values are the CLASSES.)
+   Do not change anything else in that file.
+   IMPORTANT — W1A test update (the ONLY allowed edit to tests/gateway/test_providers.py): that file's
+   `test_providers_empty_in_w1a` asserts `PROVIDERS == {}` (the W1A-only state). Update THAT SINGLE TEST to
+   assert the exact 7 registered names instead (`assert set(PROVIDERS) == {"bilibili", "exa", "jina",
+   "parallel", "rss", "v2ex", "youtube"}`) and rename it to `test_providers_registered`. Do not change any
+   other test in that file (they monkeypatch PROVIDERS and remain valid). Import order avoids cycles because this block runs after
+   ProviderError etc. are defined (submodules import ProviderError lazily inside methods only).
+
+J) tests/gateway/test_provider_impls.py — hermetic (fixtures only, NO network):
+   - FixtureFetch helper: callable (url, *, method=..., headers=None, params=None, json=None, timeout=None)
+     that asserts the expected URL (+ key params) and returns fixture text loaded from tests/fixtures/r17/<file>.
+   - Per provider (construct with the fake fetch), assert (at minimum):
+     exa: search(exa_search.txt) -> >=2 items; first item has title+url (wikipedia); positions 1..N.
+     exa: extract(exa_fetch.txt) -> 1 ExtractItem with non-empty content.
+     parallel: search(parallel_search.txt) -> >=2 items with url+title; description non-empty.
+     parallel: extract(parallel_fetch.txt) -> 1 ExtractItem, content non-empty.
+     jina: extract(jina_example.md) -> title "Example Domain", content contains "This domain is for use".
+     jina: capabilities == {"extract"}; jina.search raises ProviderError.
+     v2ex: search(sov2ex_search.json) -> 3 items; url == "https://www.v2ex.com/t/<id>"; title non-empty.
+     bilibili: search(bilibili_search.json) -> 3 items; url startswith "https://www.bilibili.com/video/";
+       title contains NO "<em>" tags.
+     youtube: search(youtube_results.html) -> 3 items; url startswith "https://www.youtube.com/watch?v="; title non-empty.
+     rss: search(google_news_rss.xml) -> 5 items; title+url non-empty.
+   - registry smoke: `from gateway.providers import PROVIDERS, get_provider` -> sorted(PROVIDERS) ==
+       ["bilibili","exa","jina","parallel","rss","v2ex","youtube"]; get_provider("exa") is an ExaProvider.
+   - error path: FixtureFetch raising RuntimeError -> provider.search/extract propagates (no silent swallow).
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_provider_impls.py -q   (exit 0)
+  A2. .venv/Scripts/python.exe -m pytest tests/gateway/test_providers.py -q        (exit 0 — W1A green)
+  A3. .venv/Scripts/python.exe -m pytest -q                                        (exit 0 — FULL regression)
+  A4. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+  A5. .venv/Scripts/python.exe -c "from gateway.providers import PROVIDERS; print(sorted(PROVIDERS))"  -> 7 names
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies (no feedparser!).
+  - .venv in this worktree is a junction to the main venv — run `.venv/Scripts/python.exe ...` from the worktree root.
+  - No live network calls anywhere in code or tests (fixtures only). Do not modify the fixture files.
+  - Write gateway/providers/_http.py + exa.py within your first ~10 minutes — the spec above is complete;
+    implement exactly, do not over-plan.
+  - If the card conflicts with analysis/r17-interfaces.md, STOP and report — do not silently deviate.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + any deviations.

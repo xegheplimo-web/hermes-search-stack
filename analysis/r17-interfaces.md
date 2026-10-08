@@ -24,11 +24,11 @@ def build_registry(config: GatewayConfig) -> list[Provider]  # honors enabled/ma
 
 ## 2. Engine fan-out contract (deep path only)
 
-- `providers_enabled=true`: deep path (`run_iter` deep branch) dispatches each sub-query to the registry through the EXISTING pool (`_get_ultra_pool`), bounded by `providers_max`.
+- `providers_enabled=true`: deep path (`run_iter` deep branch) fans out the query SET (probe query + every sub-query, deduped) to the registry through the EXISTING pool machinery (`BackendPool`, per-request lifecycle as `_get_ultra_pool`), bounded by `providers_max`. (Orchestrator clarification 2026-10-08: the probe query itself is included — otherwise single-part deep queries would never use providers.)
 - Merge: provider results → `_dedupe_urls` (normalized URL) → existing evidence pipeline (`_items_to_evidence`) → `_trust_order` unchanged.
 - Per-source isolation: provider error/timeout → warning `provider <name> failed: …`; query continues.
 - `providers_enabled=false` (default) + fast path → byte-identical to today (regression gate: existing tests pass untouched).
-- Budget: 1 call/provider/sub-query; total provider calls per request ≤ `providers_max × sub_queries`.
+- Budget: 1 call/provider/target-query; total provider calls per request ≤ `providers_max × (1 + sub_queries)`.
 
 ## 3. Config keys (`HERMES_GATEWAY_*`)
 

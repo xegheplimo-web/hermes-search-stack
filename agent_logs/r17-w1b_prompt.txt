@@ -1,0 +1,89 @@
+TASK: R17-W1B — engine deep-path provider fan-out (registry -> pool -> merge; per-source isolation)
+
+PROJECT: hermes-search-stack (worktree; branch task/r17-w1b-provider-fanout off main which already includes W1A).
+
+SCOPE — write/modify ONLY:
+  1. gateway/providers/fanout.py       (NEW — ProviderFanoutBackend adapter)
+  2. gateway/core/engine.py            (ADDITIVE: one new method + one guarded call-site in run_iter deep branch)
+  3. tests/gateway/test_fanout.py      (NEW test file)
+Read-only everywhere else. Never touch: gateway/providers/__init__.py (W1A frozen), gateway/config.py, gateway/protocols.py, gateway/backends/*, tests/gateway/test_providers.py.
+
+READ FIRST (frozen contracts):
+  - analysis/r17-interfaces.md §2 (engine fan-out contract — THE spec; includes the 2026-10-08 orchestrator clarification: fan-out targets = probe query + sub-queries, deduped)
+  - gateway/providers/__init__.py — W1A: Provider protocol, PROVIDERS, ProviderError, build_registry(config), get_provider
+  - gateway/core/engine.py — run_iter deep branch (the `if mode == "deep" and not deadline_passed():` block with sub_queries / ultra / serial loop; ~lines 341-377) + `_get_ultra_pool` (per-request pool lifecycle pattern) + `_dedupe_texts` + `_dedupe_urls` / `_items_to_evidence` / `_trust_order` (pipeline AFTER merge — unchanged)
+  - gateway/core/pool.py — BackendPool: map_search(queries, max_results=) -> [(query, items|None, error_str)]
+  - tests/gateway/conftest.py (cfg, stub_engine, FakeSynthesizer) + tests/gateway/test_engine.py (engine test patterns)
+
+DESIGN (chốt — implement exactly; do not re-litigate):
+
+1) gateway/providers/fanout.py:
+   class ProviderFanoutBackend — SearchBackend adapter over a provider registry:
+     name = "providers"
+     __init__(self, providers: list[Provider], *, warnings: list[str])
+     search(self, query, *, max_results=10) -> list[SearchItem]:
+       - call ONLY providers with "search" in provider.capabilities (skip others SILENTLY — no warning);
+       - per provider: try provider.search(query, max_results=max_results); on ANY exception append
+         f"provider {p.name} failed: {exc}" to self._warnings and CONTINUE;
+       - merge items in provider order; set position = i+1; return the merged list.
+     extract(self, urls, *, char_limit=15000) -> list[ExtractItem]:
+       - v1: return [ExtractItem(url=u, error="provider extract not supported (v1)") for u in urls]
+         (never called by the engine in v1 — protocol completeness only)
+     ping(self) -> {"ok": True, "detail": f"provider fan-out ({len(self._providers)} providers)"}
+   Note: warnings list.append is thread-safe (GIL) — append directly, no locks.
+
+2) gateway/core/engine.py — ONE call-site + ONE new method:
+   a) Call-site: INSIDE the existing `if mode == "deep" and not deadline_passed():` block, immediately
+      AFTER the `if ultra_n == 0: for q in sub_queries: ...` serial loop (sub_queries is in scope there),
+      add:
+        if getattr(self.config, "providers_enabled", False) and not deadline_passed():
+            search_items.extend(self._provider_fanout(query, sub_queries, deadline_passed, warnings))
+   b) New method _provider_fanout(self, query, sub_queries, deadline_passed, warnings) -> list[SearchItem]:
+      - targets = _dedupe_texts([query] + list(sub_queries))   # probe query + subs, deduped, keep order
+      - registry = build_registry(self.config); if not registry or not targets: return []
+      - pool = BackendPool(factory=lambda: ProviderFanoutBackend(registry, warnings=warnings),
+                           size=int(getattr(self.config, "pool_size", 4) or 4), deadline_passed=deadline_passed)
+        (per-request pool, same lifecycle as _get_ultra_pool's owned pool — its workers build provider
+         adapters, NOT gateway backends, so the ultra/backend pool instance cannot be shared; the EXISTING
+         BackendPool machinery IS reused)
+      - try: results = pool.map_search(list(targets), max_results=self.config.fast_max_results)
+        finally: pool.close()
+      - for each (q, items, err): if err not in ("", "deadline"): warnings.append(f"provider fan-out failed for {q!r}: {err}")
+      - return concatenation of non-None item groups in input order.
+      - The WHOLE body is wrapped so ANY unexpected failure -> warnings.append(...) + return [] (isolation:
+        provider fan-out must never fail the request).
+   c) providers_enabled=false (default): call-site condition false -> byte-identical behavior (regression gate).
+
+3) tests/gateway/test_fanout.py — hermetic; fake providers + stub backend; NO network:
+   - FakeProvider(name, items, *, fail=False, calls=None): capabilities=frozenset({"search"}),
+     search appends query to calls (list), returns list(items) or raises RuntimeError("boom") when fail=True.
+   - Build Engine like conftest.stub_engine but cfg = GatewayConfig(backend="stub", providers_enabled=True,
+     providers="fake1,fake2", providers_max=2, cache_db=..., store_db=..., repo_root=tmp_path)
+     + monkeypatch gateway.providers.PROVIDERS with {"fake1": ..., "fake2": ...} (monkeypatch.setitem/dict).
+   - Tests (at minimum — assert with depth="deep"):
+     1. providers_enabled=False -> provider calls stay EMPTY (fan-out never ran) and run() still returns a result.
+     2. enabled -> provider URLs appear in the final result sources/evidence (merge works); run() done event OK.
+     3. targets include the probe query: fake1.calls == fake2.calls and the ORIGINAL query is among them;
+        total calls per provider == len(set([query] + sub_queries)) (compute expected from engine internals or
+        assert 1 <= len(calls) <= 1 + cfg.deep_search_queries).
+     4. isolation: fake1 fail=True -> warnings contain "provider fake1 failed"; result still completes;
+        fake2 items still present.
+     5. providers_max cap: register 3 fakes, providers_max=2 -> only the first 2 (config order) get called.
+     6. capabilities filter: a registered provider with capabilities={"extract"} only is NEVER called and
+        produces NO warning.
+     7. duplicate URLs across provider + backend -> final evidence has no duplicate normalized URLs.
+   - Keep the deep path deterministic (FakeSynthesizer from conftest; backend StubBackend).
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_fanout.py -q     (exit 0)
+  A2. .venv/Scripts/python.exe -m pytest tests/gateway/test_providers.py -q  (exit 0 — W1A stays green)
+  A3. .venv/Scripts/python.exe -m pytest -q                                  (exit 0 — FULL regression, default-off)
+  A4. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .  (exit 0)
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies.
+  - .venv in this worktree is a junction to the main checkout venv — run `.venv/Scripts/python.exe ...` from the worktree root.
+  - Do NOT change any existing test or any frozen file. Do NOT import from gateway.backends.standalone.
+  - If the card conflicts with analysis/r17-interfaces.md §2, STOP and report — do not silently deviate.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + any deviations.
