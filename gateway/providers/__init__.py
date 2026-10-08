@@ -70,21 +70,30 @@ def get_provider(name: str) -> Provider:
     raise ProviderError(name, "unknown provider")
 
 
-def build_registry(config: GatewayConfig) -> list[Provider]:
+def build_registry(config: GatewayConfig, *, warnings: list[str] | None = None) -> list[Provider]:
     """Build the enabled provider registry from *config*.
 
     Empty when ``config.providers_enabled`` is False. Otherwise walks
     ``config.enabled_providers()`` in config order, skipping unknown names
-    silently (per-source isolation), and stops at ``config.providers_max``.
+    silently (per-source isolation), and stops at ``config.providers_max``
+    (checked *before* instantiating, so a zero budget yields an empty
+    registry). Each factory is invoked in isolation: if one raises, that
+    provider is skipped and the walk continues; when *warnings* is given the
+    failure is appended as ``provider <name> factory failed: <exc>``.
     """
     if not config.providers_enabled:
         return []
     registry: list[Provider] = []
     for n in config.enabled_providers():
+        if len(registry) >= config.providers_max:
+            break
         if n in PROVIDERS:
-            registry.append(PROVIDERS[n]())
-            if len(registry) >= config.providers_max:
-                break
+            try:
+                registry.append(PROVIDERS[n]())
+            except Exception as exc:  # noqa: BLE001 — isolation: one bad factory must not block others
+                if warnings is not None:
+                    warnings.append(f"provider {n} factory failed: {exc}")
+                continue
     return registry
 
 
