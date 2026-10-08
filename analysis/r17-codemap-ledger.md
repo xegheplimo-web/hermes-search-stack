@@ -28,5 +28,17 @@ Instrumented từ Round 0. Graph: `.code-review-graph/graph.db` @ `cee297d` (ref
 - Review loop: Devin Review ×3 + Codex ×1 → orchestrator classified: **2 true positives** (zero-cap selects one provider; factory raise blocks healthy providers) → reviewfix same agent; 1 by-design (empty env → default = house `_env_str` convention); 1 duplicate. Threads replied, resolved post-merge.
 - Route data: Cline 1st try, ~17' wall, 0 fails; scope discipline clean (3 files).
 
-## W2 (append khi xong)
+## W1B — engine fan-out (Devin · 10:45 → 11:03, EXIT=0; fix round 11:08 → 11:17, EXIT=0)
+- Deliverables: `gateway/providers/fanout.py` (NEW, 59L) · `gateway/core/engine.py` (additive deep-branch call-site + `_provider_fanout`; targets = probe query + sub-queries deduped) · `tests/gateway/test_fanout.py` (NEW, 9 tests).
+- Verify: 9 scoped ✓ · regression 13 ✓ · **1301 passed, 1 skipped** ✓ · ruff ✓.
+- Review loop: Devin ×4 + Codex ×3 (dups) → **2 TP** (full-probe evicts provider evidence; shared provider instances across workers) + 1 partial (timeout → W2) + 1 wontfix (warnings order) → Devin fix round: `_PROVIDER_EVIDENCE_RESERVE=2` + fresh registry/worker (+2 tests). Re-verify: 11 scoped · **1303 passed, 1 skipped** · ruff ✓. Merged **PR #7** (`2c671b9`; 7/7 threads resolved; CI green).
+- Route data: Devin 1st try ~18' + fix ~9'; scope clean.
+
+## W2 — providers (Cline · attempt-1 killed (15' no-write spiral) → v2 10:59 → 11:11, EXIT=0; fix1 in flight)
+- Attempt-1: killed at 15' (221KB log, 0 file writes — fixture-format deliberation spiral). Card v2 (pre-decided fixture facts + write-first budget) → all 11 files written within ~5'.
+- Deliverables: `_http.py` + 7 providers + `__init__` registration + 14 hermetic tests + planned W1A test rename; parallel fixture recaptured intact by orchestrator (capture-time truncation).
+- Verify: 14 scoped ✓ · regression 13 ✓ · **1306 passed, 1 skipped** ✓ · ruff ✓ · registry = 7 ✓.
+- CI Bandit B314 (ET.fromstring) → orchestrator fix: defusedxml lazy import + pin `defusedxml==0.7.1` (requirements-gateway.txt) → CI green.
+- Review loop: Codex ×2 → **2 TP** (ProviderError contract wrap at provider boundary; bilibili `description` precedence) → fix1 dispatched (Cline, in flight).
+
 ## W3 (append khi xong)
