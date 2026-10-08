@@ -41,7 +41,10 @@ class BilibiliProvider:
                 params={"keyword": query, "page": 1},
                 headers={"User-Agent": BROWSER_UA},
             )
-            groups = (json.loads(body).get("data") or {}).get("result") or []
+            payload = json.loads(body)
+            if payload.get("code"):
+                raise ProviderError(self.name, f"bilibili api code {payload.get('code')}: {payload.get('message')}")
+            groups = (payload.get("data") or {}).get("result") or []
             video_group = next((g for g in groups if isinstance(g, dict) and g.get("result_type") == "video"), None)
             items: list[SearchItem] = []
             for entry in (video_group or {}).get("data") or []:

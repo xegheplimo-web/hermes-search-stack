@@ -64,7 +64,7 @@ def default_fetch(
     except Exception as exc:  # noqa: BLE001 — transport errors surface as RuntimeError
         raise RuntimeError(f"request to {url} failed: {exc}") from exc
     body = response.content.decode("utf-8", errors="replace")
-    if response.status_code >= 400:
+    if not 200 <= response.status_code < 300:
         raise RuntimeError(f"HTTP {response.status_code} from {url}: {body[:200]}")
     return body
 
@@ -73,7 +73,7 @@ def parse_mcp_body(body: str) -> str:
     """First text item of an MCP ``tools/call`` response (JSON or SSE data lines)."""
     stripped = body.strip()
     candidates = [stripped] if stripped.startswith("{") else []
-    candidates += [line[len("data: ") :] for line in re.split(r"\r\n|\r|\n", body) if line.startswith("data: ")]
+    candidates += [line[len("data:") :].lstrip() for line in re.split(r"\r\n|\r|\n", body) if line.startswith("data:")]
     envelope_seen = False
     for candidate in candidates:
         try:

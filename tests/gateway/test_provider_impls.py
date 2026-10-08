@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from gateway.providers import PROVIDERS, ProviderError, get_provider
+from gateway.providers._http import default_fetch, parse_mcp_body
 from gateway.providers.bilibili import BilibiliProvider
 from gateway.providers.exa import ExaProvider
 from gateway.providers.jina import JinaProvider
@@ -77,74 +78,10 @@ class BoomFetch:
 
 
 def parallel_search_envelope() -> str:
-    """Return a valid JSON-RPC envelope for the parallel search fixture.
-
-    NOTE: the committed ``tests/fixtures/r17/parallel_search.txt`` is truncated
-    at capture time (it ends mid-string, so it is *not* valid JSON — see the
-    R17-W2 report). To still exercise the real wire shape we recover the
-    complete result objects from the captured prefix; a re-captured intact
-    fixture takes the verbatim path unchanged.
-    """
+    """Return the captured parallel search fixture (a valid JSON-RPC envelope)."""
     raw = fixture_text("parallel_search.txt")
-    try:
-        json.loads(raw)
-        return raw  # intact fixture — nothing to repair
-    except json.JSONDecodeError:
-        pass
-    inner = json.loads('"' + _mcp_text_body(raw) + '"')
-    results = [obj for obj in _complete_json_objects(inner) if isinstance(obj, dict) and obj.get("url")]
-    envelope = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {"content": [{"type": "text", "text": json.dumps({"results": results})}]},
-    }
-    return json.dumps(envelope)
-
-
-def _mcp_text_body(raw: str) -> str:
-    """Raw (still-escaped) ``result.content[0].text`` slice of a truncated envelope."""
-    marker = '"text":"'
-    return raw[raw.index(marker) + len(marker) :]
-
-
-def _complete_json_objects(text: str) -> list[Any]:
-    """Every complete ``{...}`` object embedded in *text* (brace/string aware)."""
-    objects: list[Any] = []
-    i, n = 0, len(text)
-    while i < n:
-        if text[i] != "{":
-            i += 1
-            continue
-        depth = 0
-        in_string = escaped = False
-        j = i
-        while j < n:
-            ch = text[j]
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif ch == "\\":
-                    escaped = True
-                elif ch == '"':
-                    in_string = False
-            elif ch == '"':
-                in_string = True
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            j += 1
-        if depth == 0 and j < n:
-            try:
-                objects.append(json.loads(text[i : j + 1]))
-            except json.JSONDecodeError:
-                pass
-            i = j + 1
-        else:
-            i += 1
-    return objects
+    json.loads(raw)  # the recaptured fixture is intact — assert it parses
+    return raw
 
 
 # --- registry -----------------------------------------------------------------
@@ -266,6 +203,17 @@ def test_bilibili_search_strips_em_tags():
     assert "转载" in items[0].description
 
 
+def test_bilibili_search_raises_on_api_error_code():
+    """Application errors inside HTTP-200 bodies surface as ProviderError (R17-W2-FIX2)."""
+    fetch = FixtureFetch(
+        "api.bilibili.com",
+        body=json.dumps({"code": -412, "message": "request was blocked", "data": None}),
+    )
+    with pytest.raises(ProviderError) as excinfo:
+        BilibiliProvider(fetch).search("vietnam")
+    assert "-412" in str(excinfo.value)
+
+
 # --- youtube ------------------------------------------------------------------
 
 
@@ -314,3 +262,33 @@ def test_fetch_errors_propagate():
             call()
         assert excinfo.value.name == name
         assert "boom" in str(excinfo.value)
+
+
+# --- _http helpers ------------------------------------------------------------
+
+
+def test_parse_mcp_body_accepts_sse_data_without_space():
+    """SSE allows the space after ``data:`` to be optional (R17-W2-FIX2)."""
+    envelope = {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "hello"}]}}
+    body = "event: message\ndata:" + json.dumps(envelope) + "\n\n"
+    assert parse_mcp_body(body) == "hello"
+
+
+def test_parse_mcp_body_accepts_sse_data_with_space():
+    """The spaced ``data: `` form stays green (R17-W2-FIX2)."""
+    envelope = {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "hello"}]}}
+    body = "event: message\ndata: " + json.dumps(envelope) + "\n\n"
+    assert parse_mcp_body(body) == "hello"
+
+
+def test_default_fetch_rejects_non_2xx(monkeypatch):
+    """A final 3xx (possible after follow_redirects) is not success (R17-W2-FIX2)."""
+    import httpx
+
+    class _FakeResponse:
+        status_code = 302
+        content = b"redirected"
+
+    monkeypatch.setattr(httpx, "request", lambda *args, **kwargs: _FakeResponse())
+    with pytest.raises(RuntimeError, match="HTTP 302"):
+        default_fetch("https://example.com")
