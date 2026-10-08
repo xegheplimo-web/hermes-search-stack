@@ -1,0 +1,84 @@
+TASK: R17-W3A — caller context input + MCP surface (hermes_research context + hermes_social)
+
+CONTEXT: R17 added the keyless provider layer (7 providers, merged #7/#8). W3 exposes the two caller-facing
+surfaces frozen in analysis/r17-interfaces.md §4-5:
+  - hermes_research(query, depth="auto", context: list[{title,url,content}] | None = None) — context entries
+    become EvidenceItems appended AFTER fetched evidence (ids renumbered); same claims verification; sources
+    entries may carry origin="caller".
+  - hermes_social(query, platform) — NEW tool; routes to ONE keyless provider (v2ex|bilibili|youtube|rss);
+    same isolation rules (never fail the caller).
+§5: caller context = ordinary evidence; same numbering, same host-based trust scoring (trust.py);
+origin="caller" is metadata only — NO new trust tier.
+
+REQUIREMENTS:
+
+A. gateway/protocols.py — additive:
+   - EvidenceItem (line ~36): add `origin: str | None = None` as the last (defaulted) field. SearchItem untouched.
+
+B. gateway/core/engine.py — context support:
+   1. SourceRef (line ~72): add `origin: str | None = None` (defaulted, last field).
+   2. run() and run_iter() (lines ~235/251): add keyword-only `context: list[dict] | None = None`; run()
+      forwards it to run_iter().
+   3. New helper `_append_context_evidence(self, evidence, context, warnings, trust_by_url)`:
+      - None/empty -> return evidence unchanged. Non-list -> one warning f"context ignored (not a list)" + no-op.
+      - Validate each entry: dict with non-empty title/url/content (str()-coerce); invalid entries are SKIPPED
+        with warning f"context entry {i} ignored (<reason>)" — never raise.
+      - Build EvidenceItem(title=..., url=..., content=..., origin="caller") in caller order, then renumber
+        1..N with the module helper _renumber_evidence (ids correct even when the local merge no-ops).
+      - Extend trust_by_url (the same dict used for the sources build at ~line 486) with trust.score_sources
+        scores for ONLY the new urls — mirror _trust_order's guard/pattern (import trust inside try; on
+        failure warn "context trust scoring unavailable (...)"); do NOT reorder the evidence list.
+      - Return the merged list.
+   4. Insert the call inside the existing deadline-guarded block (~line 427), immediately BEFORE
+      _merge_local_evidence:
+          if not deadline_passed():
+              evidence = self._append_context_evidence(evidence, context, warnings, trust_by_url)
+              evidence, local_hits = self._merge_local_evidence(query, evidence)
+      Final order: [local...][fetched...][caller-context...]; local merge renumbers everything 1..N
+      (double renumber is idempotent).
+   5. Sources build (~line 486): pass `origin=ev.origin` through to SourceRef.
+
+C. gateway/mcp/tools.py:
+   1. hermes_research(query, depth="auto", context=None):
+      - if context is not None and not a list -> structured error response
+        {"error": "context must be a list of {title,url,content} dicts"} (mirror hermes_fact_check's style).
+      - engine.run(query, depth=depth, context=context).
+      - sources entries: {"id","title","url"} + "origin" included when present.
+   2. hermes_social(query, platform):
+      - platform not in ("v2ex","bilibili","youtube","rss") ->
+        {"platform": platform, "results": [], "error": "unsupported platform '<x>' (use v2ex|bilibili|youtube|rss)"}.
+      - provider = gateway.providers.get_provider(platform) inside try/except (structured error on raise).
+      - items = provider.search(query, max_results=10) inside try/except (structured error, never raise —
+        same isolation policy as hermes_search; ProviderError text goes into "error").
+      - Success: {"platform": platform, "results": [{"title","url","description","position"}...]}.
+   3. FROZEN_TOOL_PARAMS: hermes_research defaults += {"context": None}; add
+      "hermes_social": {"required": ("query", "platform"), "defaults": {}}. TOOL_NAMES += "hermes_social"
+      (append at the end). make_tools binds + returns it (additive 8th tool).
+   4. tests/gateway/test_mcp_tools.py:128 `test_tool_registry_has_exact_seven_names` — update for the
+      8-name set (add hermes_social; rename to ..._eight_names is fine, keep the diff minimal).
+
+D. Tests (hermetic — no network; extend tests/gateway/test_mcp_tools.py + tests/gateway/test_engine.py,
+   or add tests/gateway/test_w3_context.py — your call):
+   - engine: context appended after fetched (final order local->fetched->context by urls/ids); ids renumbered
+     1..N; origin="caller" in result sources; invalid entries skipped + warning; non-list no-op + warning.
+   - tools: hermes_research forwards context (stub engine records kwargs) + origin passthrough; invalid
+     context form -> structured error; hermes_social: routes via get_provider stub, formats, unsupported
+     platform error, provider raising ProviderError -> structured error; registry now 8 names.
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_mcp_tools.py tests/gateway/test_engine.py -o addopts= -q   (exit 0)
+  A2. .venv/Scripts/python.exe -m pytest -o addopts= -q                                                                (exit 0 — full suite; report count)
+  A3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .                   (exit 0)
+
+SCOPE — write ONLY: gateway/protocols.py, gateway/core/engine.py, gateway/mcp/tools.py, and your test files
+under tests/gateway/. Read-only elsewhere. Do NOT touch: gateway/providers/*, gateway/config.py,
+gateway/mcp/server.py, evals/, AGENTS.md, requirements files.
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies.
+  - .venv is a junction to the main checkout venv.
+  - Engine keeps stdlib-only imports (lazy `import trust` inside try, same as _trust_order).
+  - The spec above is pre-decided from the frozen interfaces — implement exactly; edit within your first
+    ~10 minutes; do not redesign.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + deviations.

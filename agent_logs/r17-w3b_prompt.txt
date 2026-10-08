@@ -1,0 +1,52 @@
+TASK: R17-W3B — multi-source eval corpus cases + R17 docs
+
+CONTEXT: R17 added the keyless provider layer (7 providers) + engine fan-out + two caller surfaces
+(hermes_research context param; hermes_social tool — contracts frozen in analysis/r17-interfaces.md §4-5;
+W3A is implementing them in parallel — do NOT wait for its merge; document from the frozen interfaces).
+This task: extend the eval corpus with multi-source cases + small doc updates.
+
+DELIVERABLES:
+
+1. evals/r9/corpus_v1.jsonl — APPEND exactly 12 new cases with ids vn-069 .. vn-080, one single-line JSON
+   object per line, schema IDENTICAL to existing cases. FIRST read 3-4 existing lines (esp. a harder case)
+   to mirror the exact field set: id, intent, difficulty, severity, domain,
+   expected{must_include, must_not_include, required_fields}, ground_truth{checked_at, source, status},
+   ground_truth_source.
+   Character: "multi-source" — each case genuinely needs >=2 INDEPENDENT source types to answer well
+   (e.g. legal text + news coverage; enterprise registry (masothue/DKKD) + news; official docs +
+   social/video platform content). Vietnamese queries about real VN topics; mix severity S0-S2 and
+   difficulty; realistic must_include/must_not_include. Ground truth honesty: status "verify-later" where
+   you cannot point to a verified source; the source field may name the source TYPE/venue to verify later.
+   HARD RULES:
+   - NEVER modify or delete existing lines (byte-append only).
+   - Holdout ids vn-005/015/025/035/045/055/065 stay untouched.
+   - Extra keys beyond the existing schema: do NOT add any.
+2. evals/r9/README.md — update the corpus count metadata (68 -> 80) and add a short paragraph (2-4 lines)
+   documenting the W3 multi-source additions.
+3. AGENTS.md — add ONE compact subsection (<= 15 lines) under the most fitting existing gateway section
+   (create a compact new subsection only if none fits), documenting EXACTLY (contract source:
+   analysis/r17-interfaces.md §4-5):
+   - env keys: HERMES_GATEWAY_PROVIDERS_ENABLED (default false), HERMES_GATEWAY_PROVIDERS (comma list,
+     default DEFAULT_PROVIDERS), HERMES_GATEWAY_PROVIDERS_MAX (default 4);
+   - surfaces: hermes_research(query, depth, context=[{title,url,content}] optional) and
+     hermes_social(query, platform: v2ex|bilibili|youtube|rss);
+   - one line: provider fan-out is deep-path, default-off; failures isolated per provider.
+   Keep the repo doc voice; no marketing prose.
+
+VALIDATION (run these and report exact observed results):
+  V1. .venv/Scripts/python.exe evals/r9/run_corpus.py --dry-run --corpus evals/r9/corpus_v1.jsonl
+      -> exit 0; probe count must be 73 (80 cases - 7 holdout).
+  V2. .venv/Scripts/python.exe -c "import json; lines=open('evals/r9/corpus_v1.jsonl',encoding='utf-8').read().splitlines(); [json.loads(l) for l in lines]; print(len(lines))"
+      -> exit 0; prints 80.
+  V3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .
+      -> exit 0 (you touch markdown + jsonl + AGENTS.md — keep them format-clean).
+
+SCOPE — write ONLY: evals/r9/corpus_v1.jsonl (append ONLY), evals/r9/README.md, AGENTS.md.
+Read-only elsewhere. No commits, no pushes, no new dependencies, do not touch gateway/ or tests/.
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. .venv is a junction to the main checkout venv.
+  - Start writing within your first ~5 minutes: read a couple of corpus lines, then append the cases.
+  - Do not run live web calls; corpus content is written from your knowledge, marked verify-later.
+
+REPORT (final message): files written + exact commands run + observed results + deviations.
