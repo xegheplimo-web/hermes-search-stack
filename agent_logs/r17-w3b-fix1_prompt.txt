@@ -1,0 +1,40 @@
+TASK: R17-W3B-FIX1 — 3 verified review findings on PR #10 (fix round 1)
+
+CONTEXT: PR #10 (+12 multi-source corpus cases vn-069..vn-080 + docs) received verified review findings.
+All three are real defects in the NEW cases. Fix exactly these; keep ids/keys/count (80 lines) unchanged.
+
+FIX-F1 (Devin BUG) — "Shortened variants distort multi-source evaluation":
+  Several new cases have variants that drop a substantive half of the main question while keeping the
+  same two-part expectations — the variant then cannot pass without guessing the omitted clause.
+  Confirmed instances: no-diacritics variants of vn-069, vn-070, vn-071 (drop the press/business half);
+  vn-075 (drops the press question); misspelling variants of vn-069, vn-070, vn-075, vn-080 (omit a
+  substantive half).
+  FIX: for EVERY case vn-069..vn-080, verify all 5 variants and restore every substantive clause of the
+  main query in all variants — variants may differ ONLY in spelling, register (informal), or language
+  (EN translation); never drop a clause. Fix at least the flagged cases; sweep all 12 for the same defect.
+
+FIX-F2 (Devin BUG) — "Vinamilk tax-code answer can omit tax code" (vn-071):
+  must_include item 1 currently accepts a tax code OR a registered address — not interchangeable.
+  FIX: reword must_include so a CITATION-BACKED TAX CODE is required; the registered address may appear
+  only as optional supporting context (it must not satisfy the requirement alone). Keep the second
+  (business-results) expectation.
+
+FIX-F3 (Devin BUG + Codex P2 — same finding) — "VF 3 range benchmark accepts advertised range" (vn-072):
+  The range expectation accepts the manufacturer's number, so one VinFast spec page can satisfy a case
+  that claims to need an independent second source.
+  FIX: reword so the real-world-range requirement needs an INDEPENDENT real-world review / measured
+  range source (manufacturer spec may appear only as a labeled comparison, not as a satisfying source).
+
+HARD RULES:
+  - Do NOT touch lines vn-001..vn-068; APPEND-ONLY policy otherwise (edit only the 12 new lines in place).
+  - Do NOT change: ids, key sets, line count (80), holdout rule, other cases' expectations.
+  - Do NOT touch tests/ (the corpus-size oracle is already updated on this branch), gateway/, or AGENTS.md.
+
+VALIDATION (run + report):
+  V1. .venv/Scripts/python.exe -c "import json; lines=open('evals/r9/corpus_v1.jsonl',encoding='utf-8').read().splitlines(); cases=[json.loads(l) for l in lines]; new=[c for c in cases if c['id']>='vn-069']; assert len(lines)==80; assert all(c.get('variants') and len(c['variants'])==5 for c in new); print('ok', len(lines))"
+  V2. .venv/Scripts/python.exe evals/r9/run_corpus.py --dry-run --corpus evals/r9/corpus_v1.jsonl   (exit 0; 72/72 probes)
+  V3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .  (exit 0)
+
+SCOPE — write ONLY: evals/r9/corpus_v1.jsonl. Read-only elsewhere. No commits/pushes/new deps.
+CONSTRAINTS: stay in the worktree; edit within your first ~5 minutes; do not redesign.
+REPORT: files written + commands + observed results + deviations.

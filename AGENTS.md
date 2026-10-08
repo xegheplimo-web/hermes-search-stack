@@ -52,3 +52,13 @@ gives you structural context (callers, dependents, test coverage) that file sear
 3. Use `get_affected_flows_tool` to understand impact.
 4. Use `query_graph_tool` pattern="tests_for" to check coverage.
 <!-- /code-review-graph MCP tools -->
+
+## Gateway providers (R17 multi-source fan-out)
+
+- Contract source: `analysis/r17-interfaces.md` §4–5 (frozen).
+- Env keys: `HERMES_GATEWAY_PROVIDERS_ENABLED` (default `false`),
+  `HERMES_GATEWAY_PROVIDERS` (comma list, default `DEFAULT_PROVIDERS`),
+  `HERMES_GATEWAY_PROVIDERS_MAX` (default `4`).
+- Surfaces: `hermes_research(query, depth, context=[{title,url,content}] optional)`;
+  `hermes_social(query, platform: v2ex|bilibili|youtube|rss)`.
+- Provider fan-out is deep-path, default-off; failures are isolated per provider.
