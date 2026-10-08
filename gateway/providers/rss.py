@@ -1,12 +1,12 @@
 """gateway.providers.rss — Google News RSS search (search-only), R17-W2.
 
-Uses the stdlib :mod:`xml.etree.ElementTree` (no ``feedparser`` dependency) to
-read Google News' RSS search feed (``https://news.google.com/rss/search``).
+Uses defusedxml's hardened ElementTree (no ``feedparser`` dependency) to read
+Google News' RSS search feed (``https://news.google.com/rss/search``). Parsing
+untrusted XML with the raw stdlib parser trips Bandit B314 — defusedxml is the
+drop-in fix and ships in ``requirements-gateway.txt``.
 """
 
 from __future__ import annotations
-
-import xml.etree.ElementTree as ET
 
 from gateway.protocols import ExtractItem, SearchItem
 from gateway.providers._http import FetchFn, default_fetch
@@ -25,12 +25,16 @@ class RSSProvider:
 
     def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]:
         """Return news hits for *query* from the Google News RSS feed."""
+        try:
+            from defusedxml.ElementTree import fromstring as _xml_fromstring
+        except ImportError as exc:  # pragma: no cover - defusedxml ships in requirements-gateway.txt
+            raise RuntimeError("rss provider requires defusedxml (install requirements-gateway.txt)") from exc
         body = self._fetch(
             GOOGLE_NEWS_RSS_URL,
             params={"q": query, "hl": "vi", "gl": "VN", "ceid": "VN:vi"},
         )
         items: list[SearchItem] = []
-        for item in ET.fromstring(body).iter("item"):
+        for item in _xml_fromstring(body).iter("item"):
             title = (item.findtext("title") or "").strip()
             url = (item.findtext("link") or "").strip()
             if not title and not url:
