@@ -299,11 +299,11 @@ def _load_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def test_corpus_v1_has_68_lines_unique_ids():
+def test_corpus_v1_has_80_lines_unique_ids():
     rows = _load_jsonl(CORPUS_V1_PATH)
-    assert len(rows) == 68
+    assert len(rows) == 80
     ids = [r["id"] for r in rows]
-    assert len(set(ids)) == 68
+    assert len(set(ids)) == 80
 
 
 def test_corpus_v1_preserves_v0_queries_and_must_include():
@@ -319,7 +319,7 @@ def test_corpus_v1_preserves_v0_queries_and_must_include():
 
 def test_corpus_v1_new_cases_have_severity_and_ground_truth_source():
     v1 = {r["id"]: r for r in _load_jsonl(CORPUS_V1_PATH)}
-    new_ids = [f"vn-{n:03d}" for n in range(51, 69)]
+    new_ids = [f"vn-{n:03d}" for n in range(51, 81)]
     for cid in new_ids:
         assert cid in v1, f"{cid} missing from corpus_v1"
         case = v1[cid]
