@@ -40,6 +40,7 @@ class EvidenceItem:
     title: str
     url: str
     content: str = ""
+    origin: str | None = None  # "caller" for caller-supplied context (r17 §5); metadata only
 
 
 class SearchBackend(Protocol):

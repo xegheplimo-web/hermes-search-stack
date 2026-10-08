@@ -5,7 +5,7 @@ Thin, SDK-free wrappers over the engine and repo modules, per
 every failure is returned as a structured ``{"error": ...}`` payload.
 
 Binding: :func:`make_tools` captures an engine (plus an optional backend and
-store-db override) and returns seven plain callables with the frozen names and
+store-db override) and returns eight plain callables with the frozen names and
 signatures. ``gateway/mcp/server.py`` registers them on the MCP server.
 """
 
@@ -28,6 +28,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "hermes_store_query",
     "hermes_vn",
     "hermes_places",
+    "hermes_social",
 )
 
 #: Frozen parameter contracts from r8-interfaces.md section 7.
@@ -35,7 +36,7 @@ TOOL_NAMES: tuple[str, ...] = (
 FROZEN_TOOL_PARAMS: dict[str, dict[str, Any]] = {
     "hermes_search": {"required": ("query",), "defaults": {"max_results": 10}},
     "hermes_extract": {"required": ("urls",), "defaults": {"char_limit": 15000}},
-    "hermes_research": {"required": ("query",), "defaults": {"depth": "auto"}},
+    "hermes_research": {"required": ("query",), "defaults": {"depth": "auto", "context": None}},
     "hermes_fact_check": {"required": ("claims_text", "sources"), "defaults": {}},
     "hermes_store_query": {
         "required": ("query",),
@@ -49,9 +50,12 @@ FROZEN_TOOL_PARAMS: dict[str, dict[str, Any]] = {
         "required": ("query",),
         "defaults": {"area": None, "category": None, "min_rating": None, "count": 8},
     },
+    "hermes_social": {"required": ("query", "platform"), "defaults": {}},
 }
 
 _VN_KINDS: tuple[str, ...] = ("admin", "places", "enterprises", "news", "business")
+
+_SOCIAL_PLATFORMS: tuple[str, ...] = ("v2ex", "bilibili", "youtube", "rss")
 
 _DEFAULT_STORE_DB = "data/searchstore.db"
 
@@ -115,7 +119,7 @@ def make_tools(
     store_db: str | None = None,
     places_db: str | None = None,
 ) -> dict[str, Callable[..., dict]]:
-    """Build the seven frozen tools bound to *engine*.
+    """Build the eight frozen tools bound to *engine*.
 
     *backend* overrides ``engine.backend`` when given (the engine exposes
     its backend; the override exists for tests and embedding). *store_db*
@@ -175,15 +179,27 @@ def make_tools(
             results.append(entry)
         return {"results": results}
 
-    def hermes_research(query: str, depth: str = "auto") -> dict:
+    def hermes_research(query: str, depth: str = "auto", context: list[dict] | None = None) -> dict:
         """Run a full grounded research pass via ``engine.run()``.
 
-        Returns ``{answer_markdown, sources, depth, cached, elapsed_ms,
-        warnings}``.
+        *context* is an optional list of ``{title, url, content}`` dicts the
+        engine appends as ordinary ``origin="caller"`` evidence after the
+        fetched sources (r17 §4-5). Returns ``{answer_markdown, sources,
+        depth, cached, elapsed_ms, warnings}``.
         """
         started = time.perf_counter()
+        if context is not None and not isinstance(context, list):
+            return {
+                "answer_markdown": "",
+                "sources": [],
+                "depth": depth,
+                "cached": False,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "warnings": ["context must be a list of {title,url,content} dicts"],
+                "error": "context must be a list of {title,url,content} dicts",
+            }
         try:
-            result = engine.run(query, depth=depth)
+            result = engine.run(query, depth=depth, context=context)
         except Exception as exc:  # noqa: BLE001 — structured error, never raise
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return {
@@ -196,14 +212,17 @@ def make_tools(
                 "error": f"research failed: {exc}",
             }
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        sources = [
-            {
+        sources = []
+        for i, s in enumerate(_field(result, "sources", []) or []):
+            entry: dict[str, Any] = {
                 "id": _field(s, "id", i),
                 "title": _field(s, "title", ""),
                 "url": _field(s, "url", ""),
             }
-            for i, s in enumerate(_field(result, "sources", []) or [])
-        ]
+            origin = _field(s, "origin", None)
+            if origin:
+                entry["origin"] = origin
+            sources.append(entry)
         return {
             "answer_markdown": _field(result, "answer_markdown", ""),
             "sources": sources,
@@ -477,6 +496,43 @@ def make_tools(
             "viewport": viewport,
         }
 
+    def hermes_social(query: str, platform: str) -> dict:
+        """Search ONE keyless social provider (r17 §4: v2ex|bilibili|youtube|rss).
+
+        Returns ``{platform, results: [{title, url, description, position}]}``.
+        Same isolation policy as ``hermes_search``: every failure — unknown
+        platform, provider build, provider search — is a structured
+        ``{"error": ...}``, never a raise.
+        """
+        key = str(platform or "").strip().lower()
+        if key not in _SOCIAL_PLATFORMS:
+            return {
+                "platform": platform,
+                "results": [],
+                "error": f"unsupported platform {platform!r} (use v2ex|bilibili|youtube|rss)",
+            }
+        try:
+            import gateway.providers as providers
+
+            provider = providers.get_provider(key)
+        except Exception as exc:  # noqa: BLE001 — structured error, never raise
+            return {"platform": platform, "results": [], "error": f"provider {key!r} unavailable: {exc}"}
+        try:
+            items = provider.search(query, max_results=10)
+        except Exception as exc:  # noqa: BLE001 — same isolation as hermes_search
+            return {"platform": platform, "results": [], "error": f"search failed: {exc}"}
+        results = []
+        for i, item in enumerate(items or []):
+            results.append(
+                {
+                    "title": _field(item, "title", ""),
+                    "url": _field(item, "url", ""),
+                    "description": _field(item, "description", ""),
+                    "position": _field(item, "position", i),
+                }
+            )
+        return {"platform": platform, "results": results}
+
     return {
         "hermes_search": hermes_search,
         "hermes_extract": hermes_extract,
@@ -485,6 +541,7 @@ def make_tools(
         "hermes_store_query": hermes_store_query,
         "hermes_vn": hermes_vn,
         "hermes_places": hermes_places,
+        "hermes_social": hermes_social,
     }
 
 
