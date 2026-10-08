@@ -55,3 +55,4 @@ Instrumented từ Round 0. Graph: `.code-review-graph/graph.db` @ `cee297d` (ref
 ## Final verify (2026-10-08) — R17 DONE
 - main @ `3bf8c5d`: full suite **1343 passed, 1 skipped** · ruff clean (252 files) · bandit CI-scope Medium 0/High 0 · CI remote all green across 10 PRs.
 - Live: 4/4 provider smoke + engine deep fan-out smoke (2 provider hits survive cap).
+- Post-close infra incident (orchestrator-owned, recovered): `git worktree remove --force` followed the `.venv` junctions into the repo venv → repo `.venv` gutted (python.exe/Lib gone) while the search-gateway kept serving zombie from RAM. Recovery: stopped `HermesSearchGateway`, killed its pythonw tree, unlinked junctions, rebuilt venv (Python 3.14 uv-managed: `uv venv --python 3.14` + dev/gateway requirements), full suite re-run **1343 passed, 1 skipped** (baseline equal), gateway restarted → `/healthz` ok. Lesson → lead-orchestrator 1.4.6 (never `git worktree remove` a worktree with junctions; unlink first).
