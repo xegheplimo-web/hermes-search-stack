@@ -288,18 +288,44 @@ function startWeb() {
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
+    // POSIX: own process group, so the whole next-dev tree can be killed.
+    detached: process.platform !== "win32",
   });
   webProc.stdout.on("data", (d) => (webLog += d));
   webProc.stderr.on("data", (d) => (webLog += d));
+  webProc.on("error", (e) => (webLog += `[spawn error] ${e}\n`));
 }
 
 function killWeb() {
   return new Promise((resolve) => {
     if (!webProc || webProc.exitCode !== null) return resolve();
     webProc.once("exit", resolve);
-    // Windows: kill the whole tree (next dev spawns workers).
-    const killer = spawn("taskkill", ["/PID", String(webProc.pid), "/T", "/F"]);
-    killer.on("exit", () => setTimeout(resolve, 300));
+    if (process.platform === "win32") {
+      // Windows: kill the whole tree (next dev spawns workers).
+      const killer = spawn("taskkill", ["/PID", String(webProc.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+      killer.on("error", () => {});
+      killer.on("exit", () => setTimeout(resolve, 300));
+    } else {
+      // POSIX: webProc leads its own process group (detached) — kill the group.
+      try {
+        process.kill(-webProc.pid, "SIGTERM");
+      } catch {
+        try {
+          webProc.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      }
+      setTimeout(() => {
+        try {
+          process.kill(-webProc.pid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      }, 1500);
+    }
     setTimeout(resolve, 4000);
   });
 }
