@@ -1,0 +1,65 @@
+TASK: R17-W1B-FIX1 — address 2 verified review findings on PR #7 (evidence budget + worker race)
+
+CONTEXT: PR #7 (W1B engine fan-out) received automated review comments. The orchestrator verified each
+claim against the source. TWO are real defects to fix on THIS branch (task/r17-w1b-provider-fanout):
+
+FINDING A (review comment on engine.py:384) — "Full probes exclude all provider evidence":
+  Deep path builds search_items = [probe..., sub-search..., provider...], then dedupes and extracts only
+  the first `deep_extract` URLs. Defaults: fast_max_results=10, deep_extract=8 — a full probe alone fills
+  the cap, so provider hits appended at the END never survive selection; the feature cannot influence the
+  answer in the common case.
+  FIX: reserve slots. At the fan-out call-site (run_iter deep branch), when provider items are non-empty,
+  insert them so up to PROVIDER_EVIDENCE_RESERVE (=2) provider URLs survive the deep_extract cap:
+      if getattr(self.config, "providers_enabled", False) and not deadline_passed():
+          prov_items = self._provider_fanout(query, sub_queries, deadline_passed, warnings)
+          if prov_items:
+              cap = int(getattr(self.config, "deep_extract", 8) or 8)
+              reserve = min(len(prov_items), _PROVIDER_EVIDENCE_RESERVE)
+              cut = max(0, cap - reserve)
+              search_items = search_items[:cut] + prov_items + search_items[cut:]
+  Add a module-level constant `_PROVIDER_EVIDENCE_RESERVE = 2` (near the other module constants) with a
+  one-line comment. When providers_enabled=False nothing changes (byte-identical behavior).
+
+FINDING B (review comment on engine.py:737-739) — "Shared providers race across query workers":
+  _provider_fanout builds ONE registry and hands the SAME provider instances to every pool worker through
+  the factory lambda — concurrent provider.search() calls on shared instances. The Provider protocol makes
+  no thread-safety guarantee (BackendPool explicitly allows shared instances only for thread-safe ops).
+  FIX: per-worker fresh registry — the pool factory builds its own registry:
+      pool = BackendPool(
+          factory=lambda: ProviderFanoutBackend(build_registry(self.config), warnings=warnings),
+          size=int(getattr(self.config, "pool_size", 4) or 4),
+          deadline_passed=deadline_passed,
+      )
+  KEEP the outer `registry = build_registry(self.config, warnings=warnings)` call for the empty-check and
+  the once-only factory-failure warnings — but do NOT pass warnings to the per-worker build (avoids
+  duplicated factory-failure warnings). Every other behavior stays identical (order, cap, isolation).
+
+NOT defects (do NOT change):
+- Warning ORDER across worker threads (analysis-only comment; warnings are diagnostic, order not contractual).
+- provider_timeout_s wiring (tracked for W2; the transport-level httpx timeout lands there).
+
+SCOPE — write ONLY:
+  1. gateway/core/engine.py   (call-site + constant + factory; nothing else)
+  2. tests/gateway/test_fanout.py  (add 2 tests; keep the existing 9 green)
+Read-only elsewhere. Do not touch fanout.py unless strictly required — if you must, keep its public
+behavior identical and say so in the report.
+
+NEW TESTS (both hermetic, no network):
+  T1 (finding A): stub backend with 10 unique URLs + one provider with 2 unique items; run deep query;
+      assert at least one provider URL is present in result.sources (survives the cap) AND the total
+      extracted URLs <= deep_extract. Also assert providers_enabled=False leaves the ordering untouched.
+  T2 (finding B): monkeypatch `gateway.core.engine.build_registry` with a COUNTING wrapper that delegates
+      to the real build_registry; run one multipart deep query; assert the wrapper was called >= 2 times
+      (1 outer empty-check build + at least 1 per-worker build). Keep provider-call assertions green.
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_fanout.py -o addopts= -q     (exit 0; 11 tests)
+  A2. .venv/Scripts/python.exe -m pytest -o addopts= -q                                  (exit 0 — full suite)
+  A3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies.
+  - .venv in this worktree is a junction to the main checkout venv — run `.venv/Scripts/python.exe ...` from the worktree root.
+  - This is a small, fully-specified fix: edit within your first ~5 minutes, do not over-plan.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + deviations.
