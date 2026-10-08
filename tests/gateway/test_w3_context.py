@@ -21,8 +21,11 @@ from gateway.core.cache import GatewayCache
 from gateway.core.engine import Engine
 from gateway.core.local_context import VN_GEO_DB_ENV
 from gateway.mcp.tools import FROZEN_TOOL_PARAMS, TOOL_NAMES, make_tools
+from gateway.protocols import SearchItem
 from gateway.providers import ProviderError
 from tests.gateway.conftest import FakeSynthesizer
+from tests.gateway.test_deadline import SlowSearchBackend
+from tests.gateway.test_engine import _verified_pack
 from vn_geo import business
 
 _CTX = [
@@ -301,3 +304,90 @@ def test_tool_names_and_params_have_eight_entries(tmp_path):
     assert FROZEN_TOOL_PARAMS["hermes_research"]["defaults"] == {"depth": "auto", "context": None}
     tools = make_tools(_RecordingEngine(tmp_path))
     assert sorted(tools) == sorted(TOOL_NAMES)
+
+
+# ---------------------------------------------------------------------------
+# Engine — fix-round regressions (deadline append, trust collision, cache bypass)
+# ---------------------------------------------------------------------------
+
+
+def test_context_survives_spent_deadline(tmp_path):
+    """FIX-F1: a deadline-past run still returns caller evidence.
+
+    The append costs no I/O, so caller context is part of a partial answer;
+    only the local lookup stays deadline-guarded.
+    """
+    cfg = GatewayConfig(
+        backend="stub",
+        cache_db=str(tmp_path / "answers.db"),
+        store_db=str(tmp_path / "store.db"),
+        repo_root=str(tmp_path),
+        request_deadline_s=0.05,
+    )
+    engine = Engine(
+        cfg,
+        backend=SlowSearchBackend(0.4),  # probe alone exceeds the deadline
+        synth=FakeSynthesizer(),
+        cache=GatewayCache(cfg.cache_db_path),
+    )
+    result = engine.run("weather in Hanoi today", context=list(_CTX))
+    assert result.timings_ms["deadline_exceeded"] == 1
+    assert "local_hits" not in result.timings_ms  # local lookup stays deadline-guarded
+    caller = [s for s in result.sources if s.origin == "caller"]
+    assert [s.url for s in caller] == ["https://caller.example/a", "https://caller.example/b"]
+    assert _sequential_ids(result)
+
+
+def test_context_url_never_overwrites_fetched_trust(cfg, monkeypatch):
+    """FIX-F2: a caller passage must not upgrade a snippet-only fetched score."""
+    import trust
+
+    def fake_score(sources):
+        return {"sources": [{"url": s["url"], "score": 0.11 if s.get("snippet_only") else 0.99} for s in sources]}
+
+    monkeypatch.setattr(trust, "score_sources", fake_score)
+    engine = Engine(
+        cfg,
+        backend=StubBackend(
+            items=[SearchItem(title="Dup", url="https://dup.example/x", description="")],
+            fail_extract=True,  # -> snippet-only fetched evidence (score 0.11)
+        ),
+        synth=FakeSynthesizer(),
+        cache=GatewayCache(cfg.cache_db_path),
+    )
+    result = engine.run(
+        "weather in Hanoi today",
+        depth="fast",
+        context=[{"title": "Caller Dup", "url": "https://dup.example/x", "content": "full caller content"}],
+    )
+    dup = [s for s in result.sources if s.url == "https://dup.example/x"]
+    assert len(dup) == 2 and {s.origin for s in dup} == {None, "caller"}
+    assert all(s.trust_score == 0.11 for s in dup)  # fetched record preserved
+
+
+def test_context_bypasses_fresh_cache_hit(stub_engine, cfg):
+    """FIX-F3a: a cached answer must not be served to a context-scoped run."""
+    GatewayCache(cfg.cache_db_path).put(_verified_pack("weather in Hanoi today"))
+    result = stub_engine.run("weather in Hanoi today", context=list(_CTX))
+    assert result.cached is False
+    assert result.depth in ("fast", "deep")
+    assert stub_engine._backend.search_calls  # the run actually proceeded
+    assert [s.url for s in result.sources if s.origin == "caller"] == [
+        "https://caller.example/a",
+        "https://caller.example/b",
+    ]
+
+
+def test_contextual_deep_result_not_published(stub_engine, cfg):
+    """FIX-F3b: a context-scoped deep answer must not enter the cache."""
+    query = "Compare Alpha vs Beta in detail"
+    result = stub_engine.run(query, context=list(_CTX))
+    assert result.depth == "deep"
+    assert "verify_ms" not in result.timings_ms  # publish stage skipped
+    assert [s.url for s in result.sources if s.origin == "caller"] == [
+        "https://caller.example/a",
+        "https://caller.example/b",
+    ]
+    assert GatewayCache(cfg.cache_db_path).get(query) is None
+    plain = stub_engine.run(query)
+    assert plain.cached is False

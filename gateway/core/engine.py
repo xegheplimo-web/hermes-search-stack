@@ -296,7 +296,10 @@ class Engine:
             return True
 
         # 1) cache-first: a fresh verified pack serves with no live calls.
-        if allow_cache:
+        #    Context-scoped requests bypass the query-keyed cache entirely —
+        #    a hit would silently drop caller evidence, and a contextual
+        #    answer must never be published for plain same-query requests.
+        if allow_cache and not context:
             t = _ms()
             hit = self._cache_get(query, warnings)
             timings["cache_ms"] = int(_ms() - t)
@@ -440,13 +443,18 @@ class Engine:
 
         # C2 local-first merge (both modes): non-ambiguous vn-geo entities
         # prepend after trust ordering, then all ids renumber 1..N (local
-        # 1..k, web k+1..). Empty -> no-op; trust_by_url untouched. Optional
-        # work — skipped once the deadline is spent. R17-W3 caller context
-        # appends FIRST so the local prepend still leads: the final order is
-        # [local...][fetched...][caller-context...] (r17 §4-5).
+        # 1..k, web k+1..). Empty -> no-op; trust_by_url untouched. The local
+        # lookup is optional work — skipped once the deadline is spent.
+        # R17-W3 caller context appends FIRST so the local prepend still
+        # leads: the final order is [local...][fetched...][caller-context...]
+        # (r17 §4-5). The context append itself is NOT deadline-optional —
+        # caller evidence costs no I/O and must reach a partial answer; only
+        # its advisory trust scoring is deadline-guarded.
+        evidence = self._append_context_evidence(
+            evidence, context, warnings, trust_by_url, score_trust=not deadline_passed()
+        )
         if not deadline_passed():
             t = _ms()
-            evidence = self._append_context_evidence(evidence, context, warnings, trust_by_url)
             evidence, local_hits = self._merge_local_evidence(query, evidence)
             timings["local_ms"] = int(_ms() - t)
             timings["local_hits"] = local_hits
@@ -517,8 +525,9 @@ class Engine:
         ]
 
         # 5) deep only: fact_check gate -> research_pack -> AnswerCache.put.
-        #    Publishing is optional work — skipped once the deadline is spent.
-        if mode == "deep" and not deadline_passed():
+        #    Publishing is optional work — skipped once the deadline is spent,
+        #    and never runs for context-scoped requests (same bypass as §1).
+        if mode == "deep" and not deadline_passed() and not context:
             t = _ms()
             self._verify_and_publish(query, answer, evidence, trust_by_url, warnings)
             timings["verify_ms"] = int(_ms() - t)
@@ -806,6 +815,8 @@ class Engine:
         context: list[dict] | None,
         warnings: list[str],
         trust_by_url: dict,
+        *,
+        score_trust: bool = True,
     ) -> list[EvidenceItem]:
         """W3 (r17 §4-5): caller context -> trailing ``origin="caller"`` evidence.
 
@@ -813,7 +824,10 @@ class Engine:
         order, the merge renumbered 1..N, and the new urls host-scored into
         ``trust_by_url`` (the same dict the sources build reads — no new
         trust tier, no reordering). Malformed input is a warning + skip —
-        context must never fail the request.
+        context must never fail the request. ``score_trust=False`` skips the
+        advisory scoring (deadline-spent partials); records for urls already
+        in ``trust_by_url`` are preserved — a caller passage never upgrades
+        a fetched source's score.
         """
         if not context:
             return evidence
@@ -841,26 +855,30 @@ class Engine:
             )
         if not items:
             return evidence
-        try:
-            import trust
+        if score_trust:
+            try:
+                import trust
 
-            report = trust.score_sources(
-                [
-                    {
-                        "url": ev.url,
-                        "title": ev.title,
-                        "snippet_only": not (ev.content or "").strip(),
-                        "backend_error": False,
-                    }
-                    for ev in items
-                ]
-            )
-        except Exception as exc:  # noqa: BLE001 — context trust scoring is advisory
-            warnings.append(f"context trust scoring unavailable ({exc})")
-        else:
-            for e in report.get("sources", []):
-                if isinstance(e, dict):
-                    trust_by_url[_normalize_url(e.get("url", ""))] = e
+                report = trust.score_sources(
+                    [
+                        {
+                            "url": ev.url,
+                            "title": ev.title,
+                            "snippet_only": not (ev.content or "").strip(),
+                            "backend_error": False,
+                        }
+                        for ev in items
+                    ]
+                )
+            except Exception as exc:  # noqa: BLE001 — context trust scoring is advisory
+                warnings.append(f"context trust scoring unavailable ({exc})")
+            else:
+                for e in report.get("sources", []):
+                    if isinstance(e, dict):
+                        norm = _normalize_url(e.get("url", ""))
+                        # Fetched records win — a caller passage must not upgrade them.
+                        if norm not in trust_by_url:
+                            trust_by_url[norm] = e
         return _renumber_evidence(list(evidence) + items)
 
     def _verify_claims(self, answer: str, evidence: list[EvidenceItem]):
