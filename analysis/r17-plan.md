@@ -36,9 +36,12 @@ Lead orchestrator consumes ONLY the codemap object (mode/scope/confidence/archit
 
 | Wave | Scope | Depends | Agent | Gates |
 |---|---|---|---|---|
-| W1 (A) | `gateway/providers/` registry + protocol + engine deep-path fan-out (pool) + config keys + hermetic tests | interfaces v1.0 | TBD at dispatch | ruff + pytest hermetic + default-off regression suite |
-| W2 (B) | providers: refactor exa/parallel/jina out of `standalone.py` + add v2ex/bilibili/youtube/rss | W1 | TBD at dispatch | same + standalone byte-compat tests green |
-| W3 (C) | `context` input + MCP surface + `hermes_social` + docs + eval corpus multi-source cases + live E2E | W1, W2 | TBD at dispatch | full CI + live smoke + codemap:change verdict |
+| W1A | foundation: `gateway/providers/` registry + protocol + config keys + hermetic tests | interfaces v1.0 | TBD at dispatch | ruff + pytest hermetic + default-off regression suite |
+| W1B | core fan-out: engine deep-path fan-out over pool (B2), per-source isolation | W1A | TBD at dispatch | same + fan-out covered by hermetic tests |
+| W2 | providers: refactor exa/parallel/jina out of `standalone.py` + add v2ex/bilibili/youtube/rss | W1A | TBD at dispatch | same + standalone byte-compat tests green |
+| W3 | `context` input + MCP surface + `hermes_social` + docs + eval corpus multi-source cases + live E2E | W1B, W2 | TBD at dispatch | full CI + live smoke + codemap:change verdict |
+
+Wave order (Sếp chốt 2026-10-08): **W1A → (W1B ∥ W2) → W3 → full verify.** W1B and W2 are independent of each other (both only need W1A).
 
 Round law: agent done ≠ done — orchestrator verifies each wave (source + tests + runtime evidence) before merge.
 
