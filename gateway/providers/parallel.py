@@ -28,34 +28,48 @@ class ParallelProvider:
 
     def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]:
         """Return Parallel search hits for *query* (``web_search``)."""
-        args = {"objective": query, "search_queries": [query], "session_id": uuid.uuid4().hex}
-        data = json.loads(mcp_call(self._fetch, PARALLEL_MCP_URL, "web_search", args))
-        items: list[SearchItem] = []
-        for r in data.get("results") or []:
-            if not isinstance(r, dict) or not r.get("url"):
-                continue
-            items.append(
-                SearchItem(
-                    title=r.get("title") or "",
-                    url=r.get("url") or "",
-                    description=" ".join(r.get("excerpts") or []),
-                    position=len(items) + 1,
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            args = {"objective": query, "search_queries": [query], "session_id": uuid.uuid4().hex}
+            data = json.loads(mcp_call(self._fetch, PARALLEL_MCP_URL, "web_search", args))
+            items: list[SearchItem] = []
+            for r in data.get("results") or []:
+                if not isinstance(r, dict) or not r.get("url"):
+                    continue
+                items.append(
+                    SearchItem(
+                        title=r.get("title") or "",
+                        url=r.get("url") or "",
+                        description=" ".join(r.get("excerpts") or []),
+                        position=len(items) + 1,
+                    )
                 )
-            )
-            if max_results and len(items) >= max_results:
-                break
-        return items
+                if max_results and len(items) >= max_results:
+                    break
+            return items
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
     def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]:
         """Extract each URL via ``web_fetch`` (one call per URL)."""
-        out: list[ExtractItem] = []
-        for url in urls:
-            args = {"urls": [url], "objective": "Full page content", "session_id": uuid.uuid4().hex}
-            data = json.loads(mcp_call(self._fetch, PARALLEL_MCP_URL, "web_fetch", args))
-            item = self._pick_result(url, data)
-            item.content = item.content[: max(int(char_limit), 0)]
-            out.append(item)
-        return out
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            out: list[ExtractItem] = []
+            for url in urls:
+                args = {"urls": [url], "objective": "Full page content", "session_id": uuid.uuid4().hex}
+                data = json.loads(mcp_call(self._fetch, PARALLEL_MCP_URL, "web_fetch", args))
+                item = self._pick_result(url, data)
+                item.content = item.content[: max(int(char_limit), 0)]
+                out.append(item)
+            return out
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
     @staticmethod
     def _pick_result(url: str, data: dict) -> ExtractItem:

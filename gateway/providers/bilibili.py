@@ -33,38 +33,50 @@ class BilibiliProvider:
 
     def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]:
         """Return video hits for *query* from the Bilibili ``video`` group."""
-        body = self._fetch(
-            BILIBILI_SEARCH_URL,
-            params={"keyword": query, "page": 1},
-            headers={"User-Agent": BROWSER_UA},
-        )
-        groups = (json.loads(body).get("data") or {}).get("result") or []
-        video_group = next((g for g in groups if isinstance(g, dict) and g.get("result_type") == "video"), None)
-        items: list[SearchItem] = []
-        for entry in (video_group or {}).get("data") or []:
-            if not isinstance(entry, dict):
-                continue
-            url = _video_url(entry)
-            if not url:
-                continue
-            title = html.unescape(_EM_TAG.sub("", str(entry.get("title") or ""))).strip()
-            items.append(
-                SearchItem(
-                    title=title,
-                    url=url,
-                    description=str(entry.get("desc") or entry.get("author") or ""),
-                    position=len(items) + 1,
-                )
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            body = self._fetch(
+                BILIBILI_SEARCH_URL,
+                params={"keyword": query, "page": 1},
+                headers={"User-Agent": BROWSER_UA},
             )
-            if max_results and len(items) >= max_results:
-                break
-        return items
+            groups = (json.loads(body).get("data") or {}).get("result") or []
+            video_group = next((g for g in groups if isinstance(g, dict) and g.get("result_type") == "video"), None)
+            items: list[SearchItem] = []
+            for entry in (video_group or {}).get("data") or []:
+                if not isinstance(entry, dict):
+                    continue
+                url = _video_url(entry)
+                if not url:
+                    continue
+                title = html.unescape(_EM_TAG.sub("", str(entry.get("title") or ""))).strip()
+                items.append(
+                    SearchItem(
+                        title=title,
+                        url=url,
+                        description=str(entry.get("description") or entry.get("desc") or entry.get("author") or ""),
+                        position=len(items) + 1,
+                    )
+                )
+                if max_results and len(items) >= max_results:
+                    break
+            return items
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
     def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]:
         """Not supported — Bilibili is a search-only provider."""
         from gateway.providers import ProviderError  # lazy: avoids an import cycle
 
-        raise ProviderError("bilibili", "extract not supported (search-only provider)")
+        try:
+            raise ProviderError("bilibili", "extract not supported (search-only provider)")
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
 
 def _video_url(entry: dict) -> str:

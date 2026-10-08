@@ -262,6 +262,8 @@ def test_bilibili_search_strips_em_tags():
     assert all(item.url.startswith("https://www.bilibili.com/video/") for item in items)
     assert all("<em>" not in item.title and "</em>" not in item.title for item in items)
     assert items[0].title == "Thông Tin Việt Nam Tháng 10 Năm 2026"
+    assert items[0].description
+    assert "转载" in items[0].description
 
 
 # --- youtube ------------------------------------------------------------------
@@ -294,14 +296,21 @@ def test_rss_search_parses_feed():
 
 
 def test_fetch_errors_propagate():
+    """Transport failures surface as typed ProviderError (contract §1)."""
     boom = BoomFetch()
-    with pytest.raises(RuntimeError, match="boom"):
-        ExaProvider(boom).search("q")
-    with pytest.raises(RuntimeError, match="boom"):
-        ExaProvider(boom).extract(["https://example.com"])
-    with pytest.raises(RuntimeError, match="boom"):
-        V2EXProvider(boom).search("q")
-    with pytest.raises(RuntimeError, match="boom"):
-        JinaProvider(boom).extract(["https://example.com"])
-    with pytest.raises(RuntimeError, match="boom"):
-        RSSProvider(boom).search("q")
+    calls = [
+        (lambda: ExaProvider(boom).search("q"), "exa"),
+        (lambda: ExaProvider(boom).extract(["https://example.com"]), "exa"),
+        (lambda: ParallelProvider(boom).search("q"), "parallel"),
+        (lambda: ParallelProvider(boom).extract(["https://example.com"]), "parallel"),
+        (lambda: V2EXProvider(boom).search("q"), "v2ex"),
+        (lambda: JinaProvider(boom).extract(["https://example.com"]), "jina"),
+        (lambda: BilibiliProvider(boom).search("q"), "bilibili"),
+        (lambda: YouTubeProvider(boom).search("q"), "youtube"),
+        (lambda: RSSProvider(boom).search("q"), "rss"),
+    ]
+    for call, name in calls:
+        with pytest.raises(ProviderError) as excinfo:
+            call()
+        assert excinfo.value.name == name
+        assert "boom" in str(excinfo.value)

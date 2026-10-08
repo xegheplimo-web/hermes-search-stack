@@ -24,22 +24,36 @@ class ExaProvider:
 
     def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]:
         """Return Exa search hits for *query* (``web_search_exa``)."""
-        limit = max(1, int(max_results))
-        text = mcp_call(self._fetch, EXA_MCP_URL, "web_search_exa", {"query": query, "numResults": limit})
-        return parse_exa_search_text(text, max_results)
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            limit = max(1, int(max_results))
+            text = mcp_call(self._fetch, EXA_MCP_URL, "web_search_exa", {"query": query, "numResults": limit})
+            return parse_exa_search_text(text, max_results)
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
     def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]:
         """Extract each URL via ``web_fetch_exa`` (one call per URL)."""
-        out: list[ExtractItem] = []
-        for url in urls:
-            text = mcp_call(self._fetch, EXA_MCP_URL, "web_fetch_exa", {"urls": [url]})
-            titles = (
-                (s[len("# ") :] if s.startswith("# ") else s[len("Title:") :]).strip()
-                for s in map(str.strip, text.splitlines())
-                if s.startswith(("# ", "Title:"))
-            )
-            out.append(ExtractItem(url=url, title=next(titles, ""), content=text[: max(int(char_limit), 0)]))
-        return out
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            out: list[ExtractItem] = []
+            for url in urls:
+                text = mcp_call(self._fetch, EXA_MCP_URL, "web_fetch_exa", {"urls": [url]})
+                titles = (
+                    (s[len("# ") :] if s.startswith("# ") else s[len("Title:") :]).strip()
+                    for s in map(str.strip, text.splitlines())
+                    if s.startswith(("# ", "Title:"))
+                )
+                out.append(ExtractItem(url=url, title=next(titles, ""), content=text[: max(int(char_limit), 0)]))
+            return out
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
 
 __all__ = ["EXA_MCP_URL", "ExaProvider"]

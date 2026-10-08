@@ -30,21 +30,33 @@ class JinaProvider:
         """Jina Reader cannot search — always raises :class:`ProviderError`."""
         from gateway.providers import ProviderError  # lazy: avoids an import cycle
 
-        raise ProviderError("jina", "search not supported (extract-only provider)")
+        try:
+            raise ProviderError("jina", "search not supported (extract-only provider)")
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
     def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]:
         """Read each URL through the Jina Reader and split header/content."""
-        out: list[ExtractItem] = []
-        for url in urls:
-            text = self._fetch(JINA_READER + url, headers={"Accept": "text/plain"})
-            title = ""
-            for line in text.splitlines():
-                if line.strip().startswith("Title:"):
-                    title = line.strip()[len("Title:") :].strip()
-                    break
-            content = text.split(_MARKER, 1)[1].lstrip("\n") if _MARKER in text else text
-            out.append(ExtractItem(url=url, title=title, content=content[: max(int(char_limit), 0)]))
-        return out
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            out: list[ExtractItem] = []
+            for url in urls:
+                text = self._fetch(JINA_READER + url, headers={"Accept": "text/plain"})
+                title = ""
+                for line in text.splitlines():
+                    if line.strip().startswith("Title:"):
+                        title = line.strip()[len("Title:") :].strip()
+                        break
+                content = text.split(_MARKER, 1)[1].lstrip("\n") if _MARKER in text else text
+                out.append(ExtractItem(url=url, title=title, content=content[: max(int(char_limit), 0)]))
+            return out
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
 
 __all__ = ["JINA_READER", "JinaProvider"]

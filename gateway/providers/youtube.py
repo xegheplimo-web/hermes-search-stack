@@ -32,35 +32,47 @@ class YouTubeProvider:
 
     def search(self, query: str, *, max_results: int = 10) -> list[SearchItem]:
         """Return video hits for *query* parsed from ``ytInitialData``."""
-        body = self._fetch(YOUTUBE_RESULTS_URL, params={"search_query": query}, headers={"User-Agent": BROWSER_UA})
-        match = _YT_INITIAL_DATA.search(body)
-        if not match:
-            raise RuntimeError("youtube: ytInitialData not found in results page")
-        renderers: list[dict[str, Any]] = []
-        _walk_video_renderers(json.loads(match.group(1)), renderers)
-        items: list[SearchItem] = []
-        for renderer in renderers:
-            video_id = renderer.get("videoId")
-            title = _first_run_text((renderer.get("title") or {}).get("runs"))
-            if not video_id or not title:
-                continue
-            items.append(
-                SearchItem(
-                    title=title,
-                    url=f"https://www.youtube.com/watch?v={video_id}",
-                    description=_description(renderer),
-                    position=len(items) + 1,
+        from gateway.providers import ProviderError  # lazy: avoids an import cycle
+
+        try:
+            body = self._fetch(YOUTUBE_RESULTS_URL, params={"search_query": query}, headers={"User-Agent": BROWSER_UA})
+            match = _YT_INITIAL_DATA.search(body)
+            if not match:
+                raise RuntimeError("youtube: ytInitialData not found in results page")
+            renderers: list[dict[str, Any]] = []
+            _walk_video_renderers(json.loads(match.group(1)), renderers)
+            items: list[SearchItem] = []
+            for renderer in renderers:
+                video_id = renderer.get("videoId")
+                title = _first_run_text((renderer.get("title") or {}).get("runs"))
+                if not video_id or not title:
+                    continue
+                items.append(
+                    SearchItem(
+                        title=title,
+                        url=f"https://www.youtube.com/watch?v={video_id}",
+                        description=_description(renderer),
+                        position=len(items) + 1,
+                    )
                 )
-            )
-            if max_results and len(items) >= max_results:
-                break
-        return items
+                if max_results and len(items) >= max_results:
+                    break
+            return items
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
     def extract(self, urls: list[str], *, char_limit: int = 15000) -> list[ExtractItem]:
         """Not supported — YouTube is a search-only provider."""
         from gateway.providers import ProviderError  # lazy: avoids an import cycle
 
-        raise ProviderError("youtube", "extract not supported (search-only provider)")
+        try:
+            raise ProviderError("youtube", "extract not supported (search-only provider)")
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+            raise ProviderError(self.name, str(exc)) from exc
 
 
 def _walk_video_renderers(node: Any, out: list[dict[str, Any]]) -> None:
