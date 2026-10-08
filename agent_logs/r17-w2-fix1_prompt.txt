@@ -1,0 +1,50 @@
+TASK: R17-W2-FIX1 — address 2 verified review findings on PR #8
+
+CONTEXT: PR #8 (W2 providers) received automated review comments. The orchestrator verified each claim
+against the source and the frozen contract. TWO are real defects to fix on THIS branch
+(task/r17-w2-provider-impls):
+
+FINDING A (review comment on _http.py:65) — "Wrap HTTP failures in ProviderError":
+  Contract (analysis/r17-interfaces.md §1): "provider failure raises typed ProviderError(name, detail)".
+  Today every provider lets transport errors escape as RuntimeError (raised by default_fetch), so callers
+  that rely on `except ProviderError` for per-source isolation miss ordinary network failures.
+  FIX: at the provider boundary, wrap non-ProviderError exceptions into ProviderError(self.name, str(exc)).
+  In EACH of the 7 provider modules, wrap the public method bodies (search + extract):
+      try:
+          <existing body>
+      except ProviderError:
+          raise
+      except Exception as exc:  # noqa: BLE001 — contract: provider failures are typed
+          raise ProviderError(self.name, str(exc)) from exc
+  Keep the underlying error text in the message. ProviderError is already imported lazily inside the
+  methods that raise "not supported" (jina/v2ex/bilibili/youtube/rss) — reuse that lazy import (module-top
+  `from gateway.providers import ProviderError` also works since ProviderError is defined before the
+  end-of-module registration, but lazy is the established pattern here).
+  Update tests: test_fetch_errors_propagate now expects ProviderError (assert excinfo.value.name matches
+  the provider for each provider exercised). ExaProvider.extract, V2EXProvider.search, JinaProvider.extract,
+  RSSProvider.search and at least one more provider should all be covered.
+
+FINDING B (review comment on bilibili.py:55) — "Preserve Bilibili's actual description field":
+  The live fixture (tests/fixtures/r17/bilibili_search.json) stores the useful snippet in `description`
+  (first item: "转载自 www.vtvgo.com\nThời sự 19H Việt Nam\n越南语听力练习") while `desc` is empty — the
+  current expression degrades to the author. FIX: description first:
+      description=str(entry.get("description") or entry.get("desc") or entry.get("author") or "")
+  Update test_bilibili_search_strips_em_tags to assert the first item's description is non-empty and
+  contains "转载" (per fixture).
+
+SCOPE — write ONLY:
+  gateway/providers/{exa,parallel,jina,v2ex,bilibili,youtube,rss}.py (+ _http.py only if strictly needed)
+  tests/gateway/test_provider_impls.py
+Read-only elsewhere. Do NOT change: fanout.py, engine.py, __init__.py, config.py, protocols.py.
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_provider_impls.py -o addopts= -q   (exit 0; 14 tests)
+  A2. .venv/Scripts/python.exe -m pytest -o addopts= -q                                        (exit 0 — full suite)
+  A3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies.
+  - .venv is a junction to the main checkout venv.
+  - Small mechanical fix, fully specified: edit within your first ~5 minutes, do not redesign.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + deviations.
