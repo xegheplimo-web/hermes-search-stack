@@ -5,13 +5,20 @@ quality work on hermes-search-stack (law/decrees, admin procedures, local
 places, news, gold/fuel prices, weather).
 
 - Data: `corpus_v0.jsonl` — exactly 50 lines (frozen, schema v0).
-- Data: `corpus_v1.jsonl` — 68 lines (schema v2): all 50 v0 cases preserved
-  (ids/queries/`must_include` unchanged) **plus 18 NEW harder cases**
-  (vn-051…vn-068: multi-part VN, freshness-sensitive, all with `variants`).
+- Data: `corpus_v1.jsonl` — 80 lines (schema v2): all 50 v0 cases preserved
+  (ids/queries/`must_include` unchanged) **plus 18 harder cases**
+  (vn-051…vn-068: multi-part VN, freshness-sensitive, all with `variants`) **and
+  12 W3 multi-source cases** (vn-069…vn-080, all with `variants`).
   Each case carries `severity` (S0–S3) and `ground_truth_source`.
 - These files are the **schema reference + verification guide**. Wave 2 assigns
   live ground truth; this wave only defines the questions, expectations, and
   where to verify them.
+
+W3 multi-source additions (vn-069…vn-080): each case genuinely needs ≥2
+independent source types to answer well (legal text + news coverage; enterprise
+registry (masothue/DKKD) + news; official docs + social/video platform content).
+Mix of S0–S2 / medium–hard; ground truth is `verify-later`/`dynamic` with the
+source venue named for wave-2 verification.
 
 ## 1. Schema
 
