@@ -1,3 +1,12 @@
+## Git flow: main is gated
+
+- `main` is protected by a repository ruleset: **PR required + required checks**
+  (`lint`, `test (3.11)`, `test (3.12)`, `test (3.13)`, `Bandit (Python SAST)`, `web`);
+  admins can bypass for emergencies only.
+- Normal flow: feature branch → push → PR → all checks green → squash-merge → delete branch.
+- Never push directly to `main` outside an explicit emergency bypass.
+- Live acceptance (`verify_web_stack.py`, `test_keyless_fallback.py`) runs manually, never in hermetic CI.
+
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
