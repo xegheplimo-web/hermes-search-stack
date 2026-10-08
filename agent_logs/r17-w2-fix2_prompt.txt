@@ -1,0 +1,64 @@
+TASK: R17-W2-FIX2 — address 4 verified review findings on PR #8 (round 2)
+
+CONTEXT: PR #8 (W2 providers) got a second review round. The orchestrator verified each claim against the
+source. FOUR are actionable on THIS branch (task/r17-w2-provider-impls). One fixture item was already
+fixed by the orchestrator in this branch (structuredContent trimmed to match the text payload) — do NOT
+touch the fixture file.
+
+FINDING 1 (Devin Review, _http.py:76) — "Valid SSE responses are rejected":
+  `parse_mcp_body` only recognizes `data: ` (with a space); SSE allows the space to be optional, so
+  `data:{...}` lines are silently skipped and the parser raises "unrecognized MCP response".
+  FIX:
+      candidates += [
+          line[len("data:") :].lstrip()
+          for line in re.split(r"\r\n|\r|\n", body)
+          if line.startswith("data:")
+      ]
+  Add a test: an SSE body using `data:{...}` (no space) parses correctly; keep the spaced form green.
+
+FINDING 2 (Devin Review, _http.py:68) — "Non-2xx responses pass as success":
+  `default_fetch` raises only on `status_code >= 400`; a final 3xx (possible after follow_redirects)
+  returns its body as success. FIX:
+      if not 200 <= response.status_code < 300:
+          raise RuntimeError(f"HTTP {response.status_code} from {url}: {body[:200]}")
+  Add a hermetic test: monkeypatch `httpx.request` to return a fake response with status_code=302 and
+  assert default_fetch raises RuntimeError matching "HTTP 302" (import httpx inside the test).
+
+FINDING 3 (Devin Review, bilibili.py:42) — "Bilibili failures become empty searches":
+  Bilibili reports application errors inside HTTP-200 bodies: {"code": -412, "message": "...", "data": null}.
+  The current code degrades to an empty list, hiding rate-limits/blocks from the isolation layer.
+  FIX: decode once, check the application code, raise ProviderError before reading data.result:
+      payload = json.loads(body)
+      if payload.get("code"):
+          raise ProviderError(self.name, f"bilibili api code {payload.get('code')}: {payload.get('message')}")
+      groups = (payload.get("data") or {}).get("result") or []
+  (The existing `except ProviderError: raise` inside search() already propagates it unchanged.)
+  Add a test with body {"code": -412, "message": "request was blocked", "data": null} asserting
+  ProviderError with "-412" in the message.
+
+FINDING 4 (Devin Review, tests:101) — "Fixture repair branch is obsolete":
+  The parallel fixture was recaptured intact (valid JSON; orchestrator already aligned structuredContent),
+  so the repair machinery in `parallel_search_envelope()` is dead code.
+  FIX: simplify `parallel_search_envelope()` to just read the fixture and assert it parses
+  (e.g. `raw = fixture_text("parallel_search.txt"); json.loads(raw); return raw`), and DELETE
+  `_mcp_text_body` and `_complete_json_objects` entirely (remove the outdated truncation comment).
+  Keep `test_parallel_search_parses_results` green.
+
+SCOPE — write ONLY:
+  gateway/providers/_http.py
+  gateway/providers/bilibili.py
+  tests/gateway/test_provider_impls.py
+Read-only elsewhere. Do NOT touch tests/fixtures/r17/parallel_search.txt (already fixed by orchestrator).
+Do NOT change fanout.py, engine.py, __init__.py, config.py, protocols.py, requirements files.
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_provider_impls.py -o addopts= -q   (exit 0)
+  A2. .venv/Scripts/python.exe -m pytest -o addopts= -q                                        (exit 0 — full suite)
+  A3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+
+CONSTRAINTS:
+  - Stay inside the worktree; read-only outside. No commits, no pushes, no new dependencies.
+  - .venv is a junction to the main checkout venv.
+  - Small, fully specified fix: edit within your first ~5 minutes, do not redesign.
+
+REPORT (final message): files written + exact commands run + observed results (pass counts) + deviations.
