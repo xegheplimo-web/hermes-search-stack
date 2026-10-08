@@ -27,6 +27,8 @@ from gateway.core.pool import BackendPool
 from gateway.core.router import build_signals, decide, query_markers, split_query
 from gateway.core.ultra import plan_ultra
 from gateway.protocols import EvidenceItem, ExtractItem, SearchItem
+from gateway.providers import build_registry
+from gateway.providers.fanout import ProviderFanoutBackend
 from gateway.security.admission import ADMISSION_WAIT_MS
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ if TYPE_CHECKING:
     from gateway.protocols import SearchBackend
 
 _DEPTHS = ("auto", "fast", "deep")
+_PROVIDER_EVIDENCE_RESERVE = 2  # provider URLs kept inside the deep_extract cap (R17-W1B)
 
 
 def _ms() -> float:
@@ -375,6 +378,16 @@ class Engine:
                     if deadline_passed():
                         break
                     search_items.extend(self._safe_search(q, self.config.fast_max_results, errors, warnings))
+            # R17 (r17-interfaces §2): provider fan-out sees the probe query
+            # + the SAME sub_queries, deduped — hits merge into the shared
+            # evidence pipeline below. Off by default; isolated, never raises.
+            if getattr(self.config, "providers_enabled", False) and not deadline_passed():
+                prov_items = self._provider_fanout(query, sub_queries, deadline_passed, warnings)
+                if prov_items:
+                    cap = int(getattr(self.config, "deep_extract", 8) or 8)
+                    reserve = min(len(prov_items), _PROVIDER_EVIDENCE_RESERVE)
+                    cut = max(0, cap - reserve)
+                    search_items = search_items[:cut] + prov_items + search_items[cut:]
         if deadline_passed():
             cap = self.config.deep_extract if mode == "deep" else self.config.fast_extract
             evidence = _search_items_to_evidence(search_items[: max(0, cap)])
@@ -702,6 +715,49 @@ class Engine:
         if retried:
             warnings.append(f"ultra: {retried} op(s) retried serially")
         return self._items_to_evidence(merged, search_items, errors)
+
+    # ---------- provider fan-out path (R17; r17-interfaces §2) ----------
+
+    def _provider_fanout(
+        self,
+        query: str,
+        sub_queries: list[str],
+        deadline_passed,
+        warnings: list[str],
+    ) -> list[SearchItem]:
+        """Fan ``[query] + sub_queries`` (deduped) out to the provider registry.
+
+        Per-request ``BackendPool`` of ``ProviderFanoutBackend`` adapters —
+        the same lifecycle as the owned ultra pool, but its workers build
+        PROVIDER adapters, not gateway backends, so the ultra/backend pool
+        instance cannot be shared (the ``BackendPool`` machinery itself is
+        reused). Any failure degrades to a warning + ``[]``: provider
+        fan-out must never fail the request (§2 per-source isolation).
+        """
+        try:
+            targets = _dedupe_texts([query] + list(sub_queries))
+            registry = build_registry(self.config, warnings=warnings)
+            if not registry or not targets:
+                return []
+            pool = BackendPool(
+                factory=lambda: ProviderFanoutBackend(build_registry(self.config), warnings=warnings),
+                size=int(getattr(self.config, "pool_size", 4) or 4),
+                deadline_passed=deadline_passed,
+            )
+            try:
+                results = pool.map_search(list(targets), max_results=self.config.fast_max_results)
+            finally:
+                pool.close()
+            items: list[SearchItem] = []
+            for q, group, err in results:
+                if err not in ("", "deadline"):
+                    warnings.append(f"provider fan-out failed for {q!r}: {err}")
+                if group:
+                    items.extend(group)
+            return items
+        except Exception as exc:  # noqa: BLE001 — provider fan-out must never fail the request
+            warnings.append(f"provider fan-out unavailable ({exc})")
+            return []
 
     def _merge_local_evidence(self, query: str, evidence: list[EvidenceItem]) -> tuple[list[EvidenceItem], int]:
         """C2 hook: prepend non-ambiguous ``local_context`` hits; renumber 1..N.
