@@ -77,6 +77,7 @@ class SourceRef:
     url: str
     quote: str = ""
     trust_score: float | None = None
+    origin: str | None = None
 
 
 @dataclass(slots=True)
@@ -103,7 +104,10 @@ def _search_items_to_evidence(items: list[SearchItem]) -> list[EvidenceItem]:
 
 def _renumber_evidence(evidence: list[EvidenceItem]) -> list[EvidenceItem]:
     """Renumber all ids sequentially 1..N (local prepend / revise append)."""
-    return [EvidenceItem(id=i + 1, title=ev.title, url=ev.url, content=ev.content) for i, ev in enumerate(evidence)]
+    return [
+        EvidenceItem(id=i + 1, title=ev.title, url=ev.url, content=ev.content, origin=ev.origin)
+        for i, ev in enumerate(evidence)
+    ]
 
 
 def _close_quietly(resource) -> None:
@@ -232,10 +236,17 @@ class Engine:
 
     # ---------- frozen API ----------
 
-    def run(self, query: str, *, depth: str = "auto", allow_cache: bool = True) -> EngineResult:
+    def run(
+        self,
+        query: str,
+        *,
+        depth: str = "auto",
+        allow_cache: bool = True,
+        context: list[dict] | None = None,
+    ) -> EngineResult:
         """Consume ``run_iter`` and return the final ``EngineResult``."""
         final: EngineResult | None = None
-        for event in self.run_iter(query, depth=depth, allow_cache=allow_cache):
+        for event in self.run_iter(query, depth=depth, allow_cache=allow_cache, context=context):
             if event.get("type") == "done":
                 final = event["result"]
         if final is None:  # defensive: an event-stream bug must not propagate
@@ -248,7 +259,14 @@ class Engine:
             )
         return final
 
-    def run_iter(self, query: str, *, depth: str = "auto", allow_cache: bool = True) -> Iterator[dict]:
+    def run_iter(
+        self,
+        query: str,
+        *,
+        depth: str = "auto",
+        allow_cache: bool = True,
+        context: list[dict] | None = None,
+    ) -> Iterator[dict]:
         """Event stream: ``route`` -> ``delta``* -> ``done`` (frozen §5)."""
         warnings: list[str] = []
         timings: dict[str, int] = {}
@@ -278,7 +296,10 @@ class Engine:
             return True
 
         # 1) cache-first: a fresh verified pack serves with no live calls.
-        if allow_cache:
+        #    Context-scoped requests bypass the query-keyed cache entirely —
+        #    a hit would silently drop caller evidence, and a contextual
+        #    answer must never be published for plain same-query requests.
+        if allow_cache and not context:
             t = _ms()
             hit = self._cache_get(query, warnings)
             timings["cache_ms"] = int(_ms() - t)
@@ -422,8 +443,16 @@ class Engine:
 
         # C2 local-first merge (both modes): non-ambiguous vn-geo entities
         # prepend after trust ordering, then all ids renumber 1..N (local
-        # 1..k, web k+1..). Empty -> no-op; trust_by_url untouched. Optional
-        # work — skipped once the deadline is spent.
+        # 1..k, web k+1..). Empty -> no-op; trust_by_url untouched. The local
+        # lookup is optional work — skipped once the deadline is spent.
+        # R17-W3 caller context appends FIRST so the local prepend still
+        # leads: the final order is [local...][fetched...][caller-context...]
+        # (r17 §4-5). The context append itself is NOT deadline-optional —
+        # caller evidence costs no I/O and must reach a partial answer; only
+        # its advisory trust scoring is deadline-guarded.
+        evidence = self._append_context_evidence(
+            evidence, context, warnings, trust_by_url, score_trust=not deadline_passed()
+        )
         if not deadline_passed():
             t = _ms()
             evidence, local_hits = self._merge_local_evidence(query, evidence)
@@ -490,13 +519,15 @@ class Engine:
                 url=ev.url,
                 quote=(ev.content or "")[:200].strip(),
                 trust_score=(trust_by_url.get(_normalize_url(ev.url)) or {}).get("score"),
+                origin=ev.origin,
             )
             for ev in evidence
         ]
 
         # 5) deep only: fact_check gate -> research_pack -> AnswerCache.put.
-        #    Publishing is optional work — skipped once the deadline is spent.
-        if mode == "deep" and not deadline_passed():
+        #    Publishing is optional work — skipped once the deadline is spent,
+        #    and never runs for context-scoped requests (same bypass as §1).
+        if mode == "deep" and not deadline_passed() and not context:
             t = _ms()
             self._verify_and_publish(query, answer, evidence, trust_by_url, warnings)
             timings["verify_ms"] = int(_ms() - t)
@@ -778,6 +809,78 @@ class Engine:
         merged.extend(evidence)
         return _renumber_evidence(merged), len(items)
 
+    def _append_context_evidence(
+        self,
+        evidence: list[EvidenceItem],
+        context: list[dict] | None,
+        warnings: list[str],
+        trust_by_url: dict,
+        *,
+        score_trust: bool = True,
+    ) -> list[EvidenceItem]:
+        """W3 (r17 §4-5): caller context -> trailing ``origin="caller"`` evidence.
+
+        Entries are ordinary evidence: appended AFTER fetched items in caller
+        order, the merge renumbered 1..N, and the new urls host-scored into
+        ``trust_by_url`` (the same dict the sources build reads — no new
+        trust tier, no reordering). Malformed input is a warning + skip —
+        context must never fail the request. ``score_trust=False`` skips the
+        advisory scoring (deadline-spent partials); records for urls already
+        in ``trust_by_url`` are preserved — a caller passage never upgrades
+        a fetched source's score.
+        """
+        if not context:
+            return evidence
+        if not isinstance(context, list):
+            warnings.append("context ignored (not a list)")
+            return evidence
+        items: list[EvidenceItem] = []
+        for i, entry in enumerate(context):
+            if not isinstance(entry, dict):
+                warnings.append(f"context entry {i} ignored (not a dict)")
+                continue
+            fields = {k: str(entry.get(k) or "").strip() for k in ("title", "url", "content")}
+            missing = [k for k, v in fields.items() if not v]
+            if missing:
+                warnings.append(f"context entry {i} ignored (empty {', '.join(missing)})")
+                continue
+            items.append(
+                EvidenceItem(
+                    id=0,
+                    title=fields["title"],
+                    url=fields["url"],
+                    content=fields["content"],
+                    origin="caller",
+                )
+            )
+        if not items:
+            return evidence
+        if score_trust:
+            try:
+                import trust
+
+                report = trust.score_sources(
+                    [
+                        {
+                            "url": ev.url,
+                            "title": ev.title,
+                            "snippet_only": not (ev.content or "").strip(),
+                            "backend_error": False,
+                        }
+                        for ev in items
+                    ]
+                )
+            except Exception as exc:  # noqa: BLE001 — context trust scoring is advisory
+                warnings.append(f"context trust scoring unavailable ({exc})")
+            else:
+                for e in report.get("sources", []):
+                    if isinstance(e, dict):
+                        norm = _normalize_url(e.get("url", ""))
+                        # Fetched records win — a caller passage must not upgrade them.
+                        if norm not in trust_by_url:
+                            trust_by_url[norm] = e
+        return _renumber_evidence(list(evidence) + items)
+
     def _verify_claims(self, answer: str, evidence: list[EvidenceItem]):
         """Mechanical claim verification on a draft (§6.3/§6.4)."""
         return verify_claims(
@@ -973,7 +1076,8 @@ class Engine:
         by_url = {_normalize_url(e.get("url", "")): e for e in report.get("sources", []) if isinstance(e, dict)}
         ordered = sorted(evidence, key=lambda ev: -(by_url.get(_normalize_url(ev.url)) or {}).get("score", 0.0))
         return [
-            EvidenceItem(id=i + 1, title=ev.title, url=ev.url, content=ev.content) for i, ev in enumerate(ordered)
+            EvidenceItem(id=i + 1, title=ev.title, url=ev.url, content=ev.content, origin=ev.origin)
+            for i, ev in enumerate(ordered)
         ], by_url
 
     def _verify_and_publish(

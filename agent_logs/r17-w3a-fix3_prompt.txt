@@ -1,0 +1,50 @@
+TASK: R17-W3A-FIX3 — 3 verified review findings on PR #9 (fix round 1)
+
+CONTEXT: PR #9 (W3A caller context + MCP surface) received verified review findings. All three are real
+defects on THIS branch (task/r17-w3a-context-mcp). Fix exactly these; do not redesign.
+
+FIX-F1 (Devin BUG engine.py:449 + Codex P2 — same finding) — "Caller context disappears after deadline":
+  The `_append_context_evidence` call sits INSIDE the `if not deadline_passed():` block, so when the
+  deadline is spent the caller-supplied evidence is silently dropped — contradicting the new contract
+  (caller context costs no I/O and must be part of a partial answer).
+  FIX: call `_append_context_evidence` OUTSIDE/OURSIDE that guard — context append + renumber must run
+  even when the deadline is spent. Skip ONLY the advisory trust scoring in that case: pass a flag
+  (e.g. `score_trust=not deadline_passed()` computed just before the call; or check it inside). The
+  local lookup (`_merge_local_evidence`) stays deadline-guarded exactly as today.
+  Note: even when local lookup is skipped, the final order must be [fetched...][caller-context...] with
+  ids renumbered 1..N.
+
+FIX-F2 (Devin BUG engine.py:863) — "Caller URLs overwrite fetched trust scores":
+  In `_append_context_evidence` trust enrichment, when a context URL (normalized) ALREADY has a fetched
+  trust record in `trust_by_url`, the existing record must be preserved (a caller passage must not
+  upgrade a snippet-only fetched source's score). FIX: only add records for URLs not already present
+  (e.g. `norm = _normalize_url(...); if norm not in trust_by_url: trust_by_url[norm] = e`).
+
+FIX-F3 (Codex P1) — "Bypass query-only caching when context is present":
+  Cache scope is the query alone. With a non-empty context: (a) a fresh cache hit must NOT be served —
+  it would silently drop the caller-supplied evidence; (b) a contextual deep result must NOT be
+  PUBLISHED into the cache — it would later be served to plain requests for the same query.
+  FIX: `if allow_cache and not context:` for the cache lookup; add `and not context` to the
+  `_verify_and_publish` condition (deep branch). context=None/[] keeps today's behavior exactly.
+  Add a one-line comment stating the contract (context-scoped requests bypass the query-keyed cache).
+
+TESTS to add (hermetic; extend tests/gateway/test_w3_context.py):
+  T1. Deadline-past run WITH context still returns the context evidence (origin="caller"; ids sequential);
+      no local hits required.
+  T2. Trust collision: fetched source for URL X is snippet-only (score A), caller supplies the same URL X
+      with full content → the fetched record is preserved (both sources show score A / the original record).
+  T3. Cache bypass (a): pre-seed a fresh cache entry for the query, run WITH context → the cached answer
+      is NOT served (run proceeds; context appears in sources).
+  T4. Cache bypass (b): deep run WITH context does NOT write the cache — assert via the cache's API/state
+      that no entry was added (or a subsequent same-query run with no context is not served from cache).
+
+SCOPE — write ONLY: gateway/core/engine.py, tests/gateway/test_w3_context.py (and test_engine.py /
+test_mcp_tools.py only if strictly needed). Read-only elsewhere. No commits/pushes/new deps.
+
+ACCEPTANCE (orchestrator runs exactly these):
+  A1. .venv/Scripts/python.exe -m pytest tests/gateway/test_w3_context.py tests/gateway/test_engine.py tests/gateway/test_mcp_tools.py -o addopts= -q   (exit 0)
+  A2. .venv/Scripts/python.exe -m pytest -o addopts= -q                                       (exit 0 — full suite; report count)
+  A3. .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .   (exit 0)
+
+CONSTRAINTS: stay in the worktree; the spec above is pre-decided — implement exactly; edit within your
+first ~10 minutes; do not redesign. REPORT: files written + commands + observed results + deviations.

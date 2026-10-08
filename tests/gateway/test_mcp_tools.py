@@ -79,7 +79,14 @@ class StubEngine:
         )
         self._fail = fail
 
-    def run(self, query: str, *, depth: str = "auto", allow_cache: bool = True):
+    def run(
+        self,
+        query: str,
+        *,
+        depth: str = "auto",
+        allow_cache: bool = True,
+        context: list[dict] | None = None,
+    ):
         if self._fail:
             raise RuntimeError("boom")
         return SimpleNamespace(
@@ -125,11 +132,11 @@ def _seed_store(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_tool_registry_has_exact_seven_names(stub_engine):
+def test_tool_registry_has_exact_eight_names(stub_engine):
     server = build_mcp(stub_engine)
     listed = asyncio.run(server.list_tools())
     assert sorted(t.name for t in listed) == sorted(TOOL_NAMES)
-    assert len(listed) == 7
+    assert len(listed) == 8
 
 
 def test_tool_param_schemas_match_frozen(stub_engine):
@@ -213,7 +220,7 @@ def test_no_backend_degrades_to_structured_error(tmp_path):
 
     engine = SimpleNamespace(
         config=SimpleNamespace(store_db=str(tmp_path / "s.db"), repo_root=str(tmp_path)),
-        run=lambda query, *, depth="auto", allow_cache=True: SimpleNamespace(
+        run=lambda query, *, depth="auto", allow_cache=True, context=None: SimpleNamespace(
             answer_markdown="a", sources=[], depth="fast", cached=False, warnings=[]
         ),
     )
