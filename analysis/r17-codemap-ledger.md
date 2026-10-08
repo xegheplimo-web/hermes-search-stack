@@ -20,6 +20,13 @@ Instrumented từ Round 0. Graph: `.code-review-graph/graph.db` @ `cee297d` (ref
 
 **Blast-radius / test-gap catches:** n/a this phase (pre-diff). W1–W3 entries appended per wave.
 
-## W1 (append khi xong)
+## W1
+
+**W1A — providers foundation** (Cline · longcat-2.5-preview-free · dispatched 10:05 → done 10:22, EXIT=0)
+- Deliverables: `gateway/providers/__init__.py` (91L: protocol + PROVIDERS + ProviderError + get_provider + build_registry) · `gateway/config.py` (+4 keys + `enabled_providers()`) · `tests/gateway/test_providers.py` (11 tests) · round-0 cards + 9 live-captured fixtures.
+- Orchestrator verify (independent re-run): 11 scoped ✓ · **1290 passed, 1 skipped** full ✓ · ruff check+format ✓ → merged **PR #5** (`15e54d1`, squash; CI 6/6 green: lint · test×3 · Bandit · web · Devin Review pass).
+- Review loop: Devin Review ×3 + Codex ×1 → orchestrator classified: **2 true positives** (zero-cap selects one provider; factory raise blocks healthy providers) → reviewfix same agent; 1 by-design (empty env → default = house `_env_str` convention); 1 duplicate. Threads replied, resolved post-merge.
+- Route data: Cline 1st try, ~17' wall, 0 fails; scope discipline clean (3 files).
+
 ## W2 (append khi xong)
 ## W3 (append khi xong)

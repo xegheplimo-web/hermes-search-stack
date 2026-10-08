@@ -40,7 +40,8 @@ DESIGN (chốt — implement exactly; do not re-litigate):
             search_items.extend(self._provider_fanout(query, sub_queries, deadline_passed, warnings))
    b) New method _provider_fanout(self, query, sub_queries, deadline_passed, warnings) -> list[SearchItem]:
       - targets = _dedupe_texts([query] + list(sub_queries))   # probe query + subs, deduped, keep order
-      - registry = build_registry(self.config); if not registry or not targets: return []
+      - registry = build_registry(self.config, warnings=warnings); if not registry or not targets: return []
+        (warnings param added in W1A reviewfix — surfaces failed provider factories)
       - pool = BackendPool(factory=lambda: ProviderFanoutBackend(registry, warnings=warnings),
                            size=int(getattr(self.config, "pool_size", 4) or 4), deadline_passed=deadline_passed)
         (per-request pool, same lifecycle as _get_ultra_pool's owned pool — its workers build provider
