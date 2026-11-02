@@ -1,7 +1,7 @@
 # Dev/CI tooling — exact pins keep `ruff format --check` stable across CI runs.
 # Dependabot (.github/dependabot.yml) raises bump PRs.
 ruff==0.16.10
-pytest==9.1.1
+pytest==9.2.0
 bandit==1.9.4
 # Optional vector tiers for searchstore.vectors — top tier activates when present; tests cover it + the python floor.
 # numpy 2.4.6 = newest line supporting Python 3.11 (CI matrix) through 3.14 (local dev venv).
